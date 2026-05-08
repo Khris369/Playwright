@@ -1,0 +1,26 @@
+[DEBUG] Ticket headers found: ['card-header-action-20250715-00013-9974', 'card-header-action-20250715-00034', 'card-header-action-20250715-00035', 'card-header-action-20250715-00036', 'card-header-action-20260507165839281989', 'card-header-action-20260507165852725895'], new ticket headers found: ['card-header-action-20260507165839281989', 'card-header-action-20260507165852725895'], using new ticket suffix=20260507165852725895
+[DEBUG] Field 'Reason/Cause' using selector select#problemCause_3_20260507165852725895 matched 2 element(s)
+[DEBUG] Looking for usable dropdown: selector=select#problemCause_3_20260507165852725895, matches=2
+[DEBUG] Candidate dropdown index=0, id=problemCause_3_20260507165852725895, visible=True, options=['Please select..', 'Enquiry', 'Activation', 'Deactivation', 'KYC Failed']
+[DEBUG] Filling dropdown field 'Reason/Cause' with 'Enquiry'
+[DEBUG] Dropdown found: tag=select, id=problemCause_3_20260507165852725895, name=ProblemCause, visible=True, value_to_select=Enquiry
+[DEBUG] Dropdown options: ['Please select..', 'Enquiry', 'Activation', 'Deactivation', 'KYC Failed']
+[DEBUG] Selected visible dropdown by label: id=problemCause_3_20260507165852725895, selected_value=Enquiry
+[DEBUG] Field 'Resolution' using selector select#reso_3_20260507165852725895 matched 2 element(s)
+[DEBUG] Looking for usable dropdown: selector=select#reso_3_20260507165852725895, matches=2
+[DEBUG] Candidate dropdown index=0, id=reso_3_20260507165852725895, visible=True, options=['Please select..', 'Information Provided']
+[DEBUG] Filling dropdown field 'Resolution' with 'Information Provided'
+[DEBUG] Dropdown found: tag=select, id=reso_3_20260507165852725895, name=Resolution, visible=True, value_to_select=Information Provided
+[DEBUG] Dropdown options: ['Please select..', 'Information Provided']
+[DEBUG] Selected visible dropdown by label: id=reso_3_20260507165852725895, selected_value=Information Provided
+[DEBUG] Field 'Tag' using selector select#promo_20260507165852725895 matched 1 element(s)
+[DEBUG] Looking for usable dropdown: selector=select#promo_20260507165852725895, matches=1
+[DEBUG] Candidate dropdown index=0, id=promo_20260507165852725895, visible=True, options=['Please select..', 'CelcomDigi ONE plans', 'MobileSHIELD', 'eSIM', 'CelcomDigi App', 'Fibre Bersama', 'PrivateSIM', 'Scam', 'FTTR', 'Device Unbind-Contract Ended', 'iPhone 17 promo', 'NA', 'OPPO FIND X9 PRO', 'Travel Plus Protect', 'PhoneFIX', 'Spark', 'PayFLEX', 'INFINEON', 'Red Flag-Manager Call Back', 'Red Flag-Viral on social media', 'Red Flag-MCMC', 'Red Flag-CelcomDigi Management', 'Red Flag-KPDNKK', 'Red Flag- Tribunal', 'Red Flag-SISPA']
+[DEBUG] Filling dropdown field 'Tag' with 'CelcomDigi ONE plans'
+[DEBUG] Dropdown found: tag=select, id=promo_20260507165852725895, name=PromoID, visible=True, value_to_select=CelcomDigi ONE plans
+[DEBUG] Dropdown options: ['Please select..', 'CelcomDigi ONE plans', 'MobileSHIELD', 'eSIM', 'CelcomDigi App', 'Fibre Bersama', 'PrivateSIM', 'Scam', 'FTTR', 'Device Unbind-Contract Ended', 'iPhone 17 promo', 'NA', 'OPPO FIND X9 PRO', 'Travel Plus Protect', 'PhoneFIX', 'Spark', 'PayFLEX', 'INFINEON', 'Red Flag-Manager Call Back ', 'Red Flag-Viral on social media', 'Red Flag-MCMC', 'Red Flag-CelcomDigi Management', 'Red Flag-KPDNKK', 'Red Flag- Tribunal', 'Red Flag-SISPA']
+[DEBUG] Selected visible dropdown by label: id=promo_20260507165852725895, selected_value=64
+[DEBUG] Field 'Reference ID' using label lookup
+[DEBUG] Filling text field 'Reference ID' with 'AUTO-REF-001'
+[DEBUG] Field 'Description' using label lookup
+[DEBUG] Filling text field 'Description' with 'Created by Playwright automation test.'
