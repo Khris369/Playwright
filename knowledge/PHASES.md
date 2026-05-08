@@ -65,12 +65,35 @@ Persist workflow definitions, versions, runs, and step logs.
 - Add validation for payload structure.
 
 ### Deliverables
-- Migration files and ORM models.
+- Schema-first SQL files and persistence services.
 - CRUD endpoints for workflow and version management.
 
 ### Exit criteria
 - Can create and fetch versioned workflows via API.
 - Validation catches malformed workflow definitions.
+
+### Progress
+- Status: `completed`
+- Last updated: `2026-05-08`
+- Completed:
+  - Added workflow schemas with request validation:
+    - `app/schemas/workflow.py`
+  - Added DB transaction helper:
+    - `app/services/db.py`
+  - Added repository layer for workflow/workflow_version persistence:
+    - `app/services/workflow_repository.py`
+  - Added workflow/version routes:
+    - `POST /workflows`
+    - `GET /workflows`
+    - `GET /workflows/{workflow_id}`
+    - `POST /workflows/{workflow_id}/versions`
+    - `GET /workflows/{workflow_id}/versions`
+    - route file: `app/api/routes/workflows.py`
+  - Wired routes into main router:
+    - `app/api/router.py`
+- Verification completed:
+  - API smoke test passed for create/read workflow and create/read workflow versions against live MySQL DB.
+  - `GET /health` remains successful after integration.
 
 ## Phase 3 - Workflow Execution Engine (Synchronous Core)
 ### Objective
@@ -95,6 +118,48 @@ Execute workflow steps in order with structured runtime context.
 ### Exit criteria
 - A simple workflow can run end-to-end and produce logs.
 
+### Progress
+- Status: `completed`
+- Last updated: `2026-05-08`
+- Completed:
+  - Added template interpolation helper for runtime inputs:
+    - `app/engine/template.py`
+    - Supports `{{inputs.*}}` and nested path resolution.
+  - Added synchronous step engine and handler registry:
+    - `app/engine/steps.py`
+    - Implemented generic step types:
+      - `goto_url`
+      - `fill_input`
+      - `click`
+      - `select_option`
+      - `wait_for_element`
+      - `assert_url_not_equal`
+      - `assert_text_visible`
+      - `run_custom_action`
+  - Added workflow runner service:
+    - `app/services/workflow_runner.py`
+    - Executes steps sequentially and records pass/fail at step level.
+  - Added run persistence repository:
+    - `app/services/workflow_run_repository.py`
+    - Writes `workflow_runs` and `workflow_step_runs`.
+  - Extended workflow repository with version lookup:
+    - `app/services/workflow_repository.py` (`get_workflow_version`)
+  - Added run schemas:
+    - `app/schemas/workflow_run.py`
+  - Added run APIs:
+    - `POST /workflow-runs`
+    - `GET /workflow-runs/{run_id}`
+    - `GET /workflow-runs/{run_id}/steps`
+    - route file: `app/api/routes/workflow_runs.py`
+  - Wired run routes into API router:
+    - `app/api/router.py`
+- Verification completed:
+  - Smoke test created workflow + version, executed run synchronously, and fetched run + step logs.
+  - Verified result: run status `passed`, step statuses persisted as `passed`.
+- Note:
+  - Current Phase 3 step execution is state-driven and synchronous (engine core).
+  - Real browser-backed execution with Playwright handlers will be layered in next implementation steps.
+
 ## Phase 4 - Async Worker and Queue
 ### Objective
 Run workflows asynchronously and reliably.
@@ -112,6 +177,42 @@ Run workflows asynchronously and reliably.
 ### Exit criteria
 - Workflow runs survive API process restarts.
 - Run status is queryable until completion.
+
+### Progress
+- Status: `in_progress`
+- Last updated: `2026-05-08`
+- Completed:
+  - Added Celery app wiring:
+    - `app/worker/celery_app.py`
+  - Added workflow run task:
+    - `app/worker/tasks.py` (`workflow_runs.execute`)
+  - Added worker package export:
+    - `app/worker/__init__.py`
+  - Updated run creation flow to queue-first:
+    - `POST /workflow-runs` now creates run as `queued` and enqueues task.
+    - on enqueue failure, run is finalized as `failed` with queue error summary.
+  - Updated runner service split:
+    - `run_workflow_version(...)` now creates queued run only.
+    - `execute_run(run_id)` executes and transitions `running` -> `passed/failed`.
+  - Updated run repository transitions:
+    - `create_queued_run(...)`
+    - `mark_run_running(...)`
+  - Added queue configuration keys in `.env.example`:
+    - `CELERY_BROKER_URL`
+    - `CELERY_RESULT_BACKEND`
+    - `CELERY_TASK_ALWAYS_EAGER`
+  - Updated dependencies:
+    - `requirements.txt` now includes `celery` and `redis`.
+- Verification completed:
+  - Eager-mode smoke test (`CELERY_TASK_ALWAYS_EAGER=true`) passed end-to-end:
+    - create workflow/version
+    - `POST /workflow-runs`
+    - `GET /workflow-runs/{id}`
+    - `GET /workflow-runs/{id}/steps`
+    - observed run status `passed`
+- Remaining for Phase 4 completion:
+  - Validate with real Redis broker + separate Celery worker process (non-eager mode).
+  - Confirm queued runs continue to completion when API process is restarted.
 
 ## Phase 5 - Frontend MVP
 ### Objective
