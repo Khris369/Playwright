@@ -232,6 +232,44 @@ Provide usable workflow management and run monitoring UI.
 ### Exit criteria
 - User can create, run, and inspect a workflow without touching code.
 
+### Progress
+- Status: `completed`
+- Last updated: `2026-05-08`
+- Completed:
+  - Added browser UI page served by FastAPI:
+    - `app/web/index.html`
+  - Added frontend logic for API integration:
+    - `app/web/static/app.js`
+  - Added frontend styles:
+    - `app/web/static/styles.css`
+  - Wired UI serving into app:
+    - `app/main.py`
+    - `GET /ui`
+    - static assets under `/ui/static/*`
+  - Implemented UI flows:
+    - create workflow
+    - list/refresh workflows
+    - create workflow version with JSON definition
+    - trigger run
+    - inspect run and step logs
+  - Added phase-1 visual workflow editor (linear drag-sort):
+    - Step palette for supported step types
+    - Add/remove step cards
+    - Drag-and-drop step reordering
+    - Inline step `args` JSON editing
+    - Two-way sync between visual cards and `definition_json`
+    - Auto-load latest workflow version into editor for faster edits
+- Verification completed:
+  - Smoke check passed for:
+    - `GET /ui`
+    - `GET /ui/static/app.js`
+    - `GET /ui/static/styles.css`
+  - Existing API endpoints (`/`, `/health`) remained healthy after UI integration.
+  - Visual editor sync verified:
+    - loading a workflow populates step cards from latest version JSON
+    - reordering cards updates serialized `definition_json.steps`
+    - creating a new version persists visual-editor changes
+
 ## Phase 6 - Template Library and Reusability
 ### Objective
 Ship reusable starter templates, including existing call-flow behavior.
@@ -247,6 +285,33 @@ Ship reusable starter templates, including existing call-flow behavior.
 
 ### Exit criteria
 - Template can be imported and run with minimal edits.
+
+### Progress
+- Status: `completed`
+- Last updated: `2026-05-08`
+- Completed:
+  - Added template schemas:
+    - `app/schemas/template.py`
+  - Added template repository service:
+    - `app/services/template_repository.py`
+  - Added default starter template seeding:
+    - `generic_login_flow_v1`
+  - Added template APIs:
+    - `POST /workflow-templates/seed-defaults`
+    - `POST /workflow-templates`
+    - `GET /workflow-templates`
+    - `POST /workflow-templates/{template_id}/import`
+  - Wired template routes into API:
+    - `app/api/routes/templates.py`
+    - `app/api/router.py`
+  - Import endpoint behavior:
+    - Creates a new workflow from template metadata.
+    - Creates version 1 using template `definition_json`.
+- Verification completed:
+  - Seed default template succeeded.
+  - Template listing succeeded.
+  - Template import created workflow + version.
+  - Imported version was accepted by run trigger endpoint (`POST /workflow-runs` returned `queued`).
 
 ## Phase 7 - Hardening and Observability
 ### Objective

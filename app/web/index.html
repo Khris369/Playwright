@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Workflow Builder UI</title>
+  <link rel="stylesheet" href="/ui/static/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>Workflow Builder</h1>
+    <span id="api-status" class="badge">Checking API...</span>
+  </header>
+
+  <nav class="tabs" role="tablist" aria-label="UI sections">
+    <button class="tab is-active" data-tab="workflows" role="tab" aria-selected="true">Workflows</button>
+    <button class="tab" data-tab="templates" role="tab" aria-selected="false">Templates</button>
+    <button class="tab" data-tab="runs" role="tab" aria-selected="false">Runs</button>
+  </nav>
+
+  <main class="tab-content">
+    <section class="tab-panel is-active" data-panel="workflows">
+      <div class="panel-grid two-col">
+        <section class="card">
+          <h2>Create Workflow Shell</h2>
+          <p class="hint">This creates the workflow record. Steps are added in "Version Editor" below.</p>
+          <div class="grid2">
+            <input id="wf-name" placeholder="Workflow name">
+            <input id="wf-status" placeholder="Status (active)" value="active">
+          </div>
+          <textarea id="wf-description" rows="2" placeholder="Description"></textarea>
+          <button id="btn-create-workflow">Create Workflow</button>
+        </section>
+
+        <section class="card">
+          <h2>Workflow List</h2>
+          <button id="btn-refresh-workflows">Refresh</button>
+          <p class="hint">Click a workflow to load details and versions.</p>
+          <div id="workflow-list" class="list"></div>
+        </section>
+      </div>
+
+      <section class="card version-editor-card">
+        <h2>Version Editor</h2>
+        <p class="hint">When you load a workflow, the latest version is auto-loaded here for quick editing.</p>
+        <div class="grid3">
+          <input id="ver-workflow-id" placeholder="Workflow ID (int)">
+          <input id="ver-number" type="number" value="1" min="1" placeholder="Version number">
+          <label><input id="ver-published" type="checkbox" checked> Published</label>
+        </div>
+        <div class="builder-toolbar">
+          <select id="step-type-select">
+            <option value="goto_url">goto_url</option>
+            <option value="fill_input">fill_input</option>
+            <option value="click">click</option>
+            <option value="select_option">select_option</option>
+            <option value="wait_for_element">wait_for_element</option>
+            <option value="assert_url_not_equal">assert_url_not_equal</option>
+            <option value="assert_text_visible">assert_text_visible</option>
+            <option value="run_custom_action">run_custom_action</option>
+          </select>
+          <button id="btn-add-step" type="button">Add Step</button>
+          <button id="btn-sync-from-json" type="button">Load From JSON</button>
+        </div>
+        <div id="step-builder" class="step-builder"></div>
+        <textarea id="ver-definition" rows="18"></textarea>
+        <button id="btn-create-version">Create Version</button>
+      </section>
+
+      <div class="panel-grid two-col">
+        <section class="card">
+          <h2>Selected Workflow</h2>
+          <div class="grid2">
+            <input id="selected-workflow-id" placeholder="Workflow ID (int)">
+            <button id="btn-load-workflow">Load By ID</button>
+          </div>
+          <pre id="workflow-details" class="json"></pre>
+        </section>
+
+        <section class="card">
+          <h2>Versions</h2>
+          <pre id="workflow-versions" class="json"></pre>
+        </section>
+      </div>
+    </section>
+
+    <section class="tab-panel" data-panel="templates">
+      <div class="panel-grid two-col">
+        <section class="card">
+          <h2>Templates</h2>
+          <div class="grid2">
+            <button id="btn-seed-templates">Seed Defaults</button>
+            <button id="btn-refresh-templates">Refresh Templates</button>
+          </div>
+          <div id="template-list" class="list"></div>
+        </section>
+
+        <section class="card">
+          <h2>Import Template</h2>
+          <input id="tpl-id" placeholder="Template ID (int)">
+          <input id="tpl-workflow-name" placeholder="New workflow name from template">
+          <input id="tpl-workflow-status" value="active" placeholder="Workflow status">
+          <textarea id="tpl-workflow-description" rows="2" placeholder="Workflow description (optional)"></textarea>
+          <div class="grid2">
+            <input id="tpl-version-number" type="number" value="1" min="1" placeholder="Version number">
+            <label><input id="tpl-published" type="checkbox" checked> Published</label>
+          </div>
+          <button id="btn-import-template">Import Template to Workflow</button>
+          <pre id="template-import-result" class="json"></pre>
+        </section>
+      </div>
+    </section>
+
+    <section class="tab-panel" data-panel="runs">
+      <div class="panel-grid two-col">
+        <section class="card">
+          <h2>Trigger Run</h2>
+          <input id="run-version-id" placeholder="Workflow Version ID (int)">
+          <textarea id="run-inputs" rows="8" placeholder='{"base_url":"https://example.com"}'></textarea>
+          <button id="btn-trigger-run">Trigger Run</button>
+          <div id="run-created" class="mono"></div>
+        </section>
+
+        <section class="card">
+          <h2>Run Monitor</h2>
+          <div class="grid2">
+            <input id="monitor-run-id" placeholder="Run ID (int)">
+            <button id="btn-monitor-run">Load Run</button>
+          </div>
+          <pre id="run-details" class="json"></pre>
+          <h3>Step Logs</h3>
+          <pre id="step-details" class="json"></pre>
+        </section>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast"></div>
+  <script src="/ui/static/app.js"></script>
+</body>
+</html>

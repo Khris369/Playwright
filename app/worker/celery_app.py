@@ -22,7 +22,7 @@ celery_app = Celery(
 
 celery_app.conf.update(
     task_always_eager=task_always_eager,
-    task_eager_propagates=True,
+    task_eager_propagates=False,
 )
 
 celery_app.autodiscover_tasks(["app.worker"])

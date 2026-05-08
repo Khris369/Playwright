@@ -9,7 +9,6 @@ from app.schemas.workflow_run import (
 )
 from app.services.workflow_run_repository import WorkflowRunRepository
 from app.services.workflow_runner import WorkflowRunnerService
-from app.worker.tasks import execute_workflow_run
 
 router = APIRouter(prefix="/workflow-runs", tags=["workflow-runs"])
 
@@ -34,16 +33,8 @@ def create_workflow_run(payload: WorkflowRunCreate) -> WorkflowRunResponse:
             ) from exc
         raise
 
-    try:
-        execute_workflow_run.delay(run_id)
-    except Exception as exc:
-        WorkflowRunRepository.finalize_run(
-            run_id, status="failed", error_summary=f"queue_error: {exc}"
-        )
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Failed to enqueue workflow run",
-        ) from exc
+    # Execute inline so the browser launches from the same interactive process/session.
+    WorkflowRunnerService.execute_run(run_id)
 
     run = WorkflowRunRepository.get_run(run_id)
     if run is None:

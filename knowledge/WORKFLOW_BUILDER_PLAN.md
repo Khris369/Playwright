@@ -20,7 +20,7 @@ Enable non-developer or low-code users to:
 ## MVP Scope
 ### In scope
 - Workflow definition as JSON (stored in DB).
-- Basic workflow builder UI (linear sequence first, graph later).
+- Basic workflow builder UI (linear visual builder first, graph later).
 - Execution engine for predefined step types.
 - Run history and detailed logs.
 - Parameterized inputs (e.g., `base_url`, credentials, form data, selectors, scenario values).
@@ -30,6 +30,16 @@ Enable non-developer or low-code users to:
 - Multi-tenant RBAC.
 - Real-time collaborative editing.
 - Visual diff/merge for workflow versions.
+
+## Current UI Capability (Implemented)
+- Workflow shell create/list/load.
+- Version editor with:
+  - phase-1 drag-and-drop linear step cards
+  - step add/remove/reorder
+  - inline step args JSON editing
+  - synchronized raw `definition_json` view
+  - auto-load latest version for quick iteration
+- Run trigger and run/step log inspection.
 
 ## Proposed Architecture
 ### Backend
