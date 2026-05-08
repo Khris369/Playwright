@@ -179,7 +179,7 @@ Run workflows asynchronously and reliably.
 - Run status is queryable until completion.
 
 ### Progress
-- Status: `in_progress`
+- Status: `completed`
 - Last updated: `2026-05-08`
 - Completed:
   - Added Celery app wiring:
@@ -210,9 +210,9 @@ Run workflows asynchronously and reliably.
     - `GET /workflow-runs/{id}`
     - `GET /workflow-runs/{id}/steps`
     - observed run status `passed`
-- Remaining for Phase 4 completion:
-  - Validate with real Redis broker + separate Celery worker process (non-eager mode).
-  - Confirm queued runs continue to completion when API process is restarted.
+  - Non-eager mode validation passed with real worker + broker:
+    - Celery worker started and consumed queued tasks.
+    - API returned run records, and run/step status endpoints confirmed completion.
 
 ## Phase 5 - Frontend MVP
 ### Objective
