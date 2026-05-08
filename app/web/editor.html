@@ -21,6 +21,12 @@
     <div class="panel-grid two-col">
       <section class="card">
         <h2>Workflow</h2>
+        <div id="editor-current-workflow" class="current-workflow-indicator">
+          No workflow selected
+        </div>
+        <select id="editor-workflow-id">
+          <option value="">Select workflow...</option>
+        </select>
         <div class="grid2">
           <input id="selected-workflow-id" placeholder="Workflow ID (int)">
           <button id="btn-load-workflow">Load Workflow</button>
@@ -39,6 +45,7 @@
       <p class="hint">Latest version auto-loads. Modify steps below and create the next version.</p>
       <div class="grid3">
         <input id="ver-workflow-id" placeholder="Workflow ID (int)">
+        <input id="ver-current-version-id" placeholder="Current Version ID" readonly>
         <input id="ver-number" type="number" value="1" min="1" placeholder="Version number">
         <label><input id="ver-published" type="checkbox" checked> Published</label>
       </div>
@@ -53,7 +60,10 @@
         <div id="step-builder" class="step-builder"></div>
         <textarea id="ver-definition" rows="18"></textarea>
       </div>
-      <button id="btn-create-version">Create Version</button>
+      <div class="grid2">
+        <button id="btn-save-version" type="button">Save Current Version</button>
+        <button id="btn-create-version">Create New Version</button>
+      </div>
     </section>
   </main>
 

@@ -27,6 +27,11 @@ class WorkflowVersionCreate(BaseModel):
     definition_json: dict[str, Any]
 
 
+class WorkflowVersionUpdate(BaseModel):
+    is_published: bool = False
+    definition_json: dict[str, Any]
+
+
 class WorkflowVersionResponse(BaseModel):
     id: int
     workflow_id: int

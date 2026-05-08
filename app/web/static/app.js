@@ -24,6 +24,7 @@ const stepTemplates = {
   goto_url: { url: "{{inputs.base_url}}" },
   fill_input: { selector: "", value: "" },
   click: { selector: "" },
+  click_by_role: { role: "button", name: "Submit", scope_selector: "", nth: 0, exact: true },
   select_option: { selector: "", value: "" },
   wait_for_element: { selector: "" },
   assert_url_not_equal: { url: "" },
@@ -61,6 +62,21 @@ const isDedicatedEditorPage = window.location.pathname === "/ui/editor";
 
 function editorUrlFor(workflowId) {
   return `/ui/editor?workflow_id=${encodeURIComponent(workflowId)}`;
+}
+
+function updateCurrentWorkflowIndicator(workflow) {
+  const el = $("editor-current-workflow");
+  if (!el) {
+    return;
+  }
+  if (!workflow || !workflow.id) {
+    el.textContent = "No workflow selected";
+    el.classList.remove("is-active");
+    return;
+  }
+  const name = workflow.name || "(unnamed)";
+  el.textContent = `Currently editing: #${workflow.id} ${name}`;
+  el.classList.add("is-active");
 }
 
 if ($("ver-definition")) {
@@ -295,6 +311,106 @@ function setNestedValue(target, dottedPath, value) {
   current[parts[parts.length - 1]] = value;
 }
 
+function updateRunControlsState() {
+  const hasVersion = Number(($("run-version-id") || {}).value) > 0;
+  const triggerBtn = $("btn-trigger-run");
+  const generateBtn = $("btn-generate-run-inputs");
+  if (triggerBtn) {
+    triggerBtn.disabled = !hasVersion;
+  }
+  if (generateBtn) {
+    generateBtn.disabled = !hasVersion;
+  }
+  const loadPresetBtn = $("btn-load-run-preset");
+  const deletePresetBtn = $("btn-delete-run-preset");
+  const hasPreset = Number(($("run-preset-id") || {}).value) > 0;
+  if (loadPresetBtn) {
+    loadPresetBtn.disabled = !hasPreset;
+  }
+  if (deletePresetBtn) {
+    deletePresetBtn.disabled = !hasPreset;
+  }
+}
+
+function runPresetOption(preset) {
+  const scope =
+    preset.workflow_version_id
+      ? `v:${preset.workflow_version_id}`
+      : preset.workflow_id
+        ? `wf:${preset.workflow_id}`
+        : "global";
+  return `<option value="${preset.id}">#${preset.id} ${preset.name} (${scope})</option>`;
+}
+
+async function refreshRunArgPresets() {
+  const select = $("run-preset-id");
+  if (!select) {
+    return;
+  }
+  const workflowId = Number(($("run-workflow-id") || {}).value);
+  const versionId = Number(($("run-version-id") || {}).value);
+  let query = "";
+  if (versionId) {
+    query = `?workflow_version_id=${versionId}`;
+  } else if (workflowId) {
+    query = `?workflow_id=${workflowId}`;
+  }
+  const rows = await api(`/run-arg-presets${query}`);
+  select.innerHTML = `<option value="">Select saved preset...</option>${rows
+    .map(runPresetOption)
+    .join("")}`;
+  updateRunControlsState();
+}
+
+async function saveRunArgPreset() {
+  const name = String(($("run-preset-name") || {}).value || "").trim();
+  if (!name) {
+    throw new Error("Preset name is required");
+  }
+  const inputs = JSON.parse(($("run-inputs") || {}).value || "{}");
+  const workflowId = Number(($("run-workflow-id") || {}).value) || null;
+  const versionId = Number(($("run-version-id") || {}).value) || null;
+  const selectedPresetId = Number(($("run-preset-id") || {}).value) || null;
+  const payload = {
+    name,
+    workflow_id: workflowId,
+    workflow_version_id: versionId,
+    inputs_json: inputs,
+  };
+  if (selectedPresetId) {
+    return api(`/run-arg-presets/${selectedPresetId}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    });
+  }
+  return api("/run-arg-presets", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+async function loadRunArgPreset() {
+  const presetId = Number(($("run-preset-id") || {}).value);
+  if (!presetId) {
+    throw new Error("Select a preset first");
+  }
+  const presets = await api("/run-arg-presets");
+  const preset = (presets || []).find((item) => Number(item.id) === presetId);
+  if (!preset) {
+    throw new Error("Preset not found");
+  }
+  $("run-inputs").value = JSON.stringify(preset.inputs_json || {}, null, 2);
+  setValueIfPresent("run-preset-name", preset.name || "");
+}
+
+async function deleteRunArgPreset() {
+  const presetId = Number(($("run-preset-id") || {}).value);
+  if (!presetId) {
+    throw new Error("Select a preset first");
+  }
+  await api(`/run-arg-presets/${presetId}`, { method: "DELETE" });
+}
+
 async function generateRunInputsTemplate() {
   const versionId = Number(($("run-version-id") || {}).value);
   if (!versionId) {
@@ -329,7 +445,14 @@ async function api(path, options = {}) {
     const body = await res.text();
     throw new Error(`${res.status} ${res.statusText} :: ${body}`);
   }
-  return res.json();
+  if (res.status === 204) {
+    return null;
+  }
+  const text = await res.text();
+  if (!text) {
+    return null;
+  }
+  return JSON.parse(text);
 }
 
 async function checkApi() {
@@ -354,6 +477,13 @@ function workflowOption(wf) {
   return `<option value="${wf.id}">#${wf.id} ${wf.name || "(unnamed)"}</option>`;
 }
 
+function setSelectedWorkflowListItem(workflowId) {
+  document.querySelectorAll("#workflow-list .item.clickable").forEach((el) => {
+    const rowWorkflowId = Number(el.getAttribute("data-workflow-id"));
+    el.classList.toggle("is-selected", rowWorkflowId === workflowId);
+  });
+}
+
 function templateRow(tpl) {
   return `<div class="item clickable" data-template-id="${tpl.id}" data-template-name="${tpl.name || "Template"}">
     <div><strong>#${tpl.id}</strong> ${tpl.name || "(unnamed template)"}</div>
@@ -363,22 +493,42 @@ function templateRow(tpl) {
 
 async function refreshWorkflows() {
   const items = await api("/workflows");
-  $("workflow-list").innerHTML = items.length ? items.map(workflowRow).join("") : "<div class='muted'>No workflows yet.</div>";
+  const workflowListEl = $("workflow-list");
+  if (workflowListEl) {
+    workflowListEl.innerHTML = items.length ? items.map(workflowRow).join("") : "<div class='muted'>No workflows yet.</div>";
+  }
   const runWorkflowSelect = $("run-workflow-id");
+  const editorWorkflowSelect = $("editor-workflow-id");
   if (runWorkflowSelect) {
     runWorkflowSelect.innerHTML =
       `<option value="">Select workflow...</option>${items.map(workflowOption).join("")}`;
   }
-  const canLoadDetails = Boolean($("selected-workflow-id") && $("workflow-details") && $("workflow-versions"));
-  document.querySelectorAll("#workflow-list .item.clickable").forEach((el) => {
-    el.addEventListener("click", () => {
-      if (!canLoadDetails) {
-        return;
-      }
-      const workflowId = Number(el.getAttribute("data-workflow-id"));
-      loadWorkflowDetails(workflowId);
+  if (editorWorkflowSelect) {
+    const current = editorWorkflowSelect.value;
+    editorWorkflowSelect.innerHTML =
+      `<option value="">Select workflow...</option>${items.map(workflowOption).join("")}`;
+    if (current) {
+      editorWorkflowSelect.value = current;
+    }
+  }
+  updateRunControlsState();
+  if (workflowListEl) {
+    const canLoadDetails = Boolean($("selected-workflow-id") && $("workflow-details") && $("workflow-versions"));
+    document.querySelectorAll("#workflow-list .item.clickable").forEach((el) => {
+      el.addEventListener("click", () => {
+        if (!canLoadDetails) {
+          return;
+        }
+        const workflowId = Number(el.getAttribute("data-workflow-id"));
+        setSelectedWorkflowListItem(workflowId);
+        loadWorkflowDetails(workflowId);
+      });
     });
-  });
+    const selectedId = Number(($("selected-workflow-id") || {}).value);
+    if (selectedId > 0) {
+      setSelectedWorkflowListItem(selectedId);
+    }
+  }
 }
 
 async function refreshRunVersionsForWorkflow(workflowId) {
@@ -388,6 +538,8 @@ async function refreshRunVersionsForWorkflow(workflowId) {
   }
   if (!workflowId) {
     runVersionSelect.innerHTML = `<option value="">Select version...</option>`;
+    updateRunControlsState();
+    await refreshRunArgPresets();
     return;
   }
 
@@ -400,6 +552,18 @@ async function refreshRunVersionsForWorkflow(workflowId) {
         )
         .join("")
     : `<option value="">No versions found</option>`;
+  updateRunControlsState();
+
+  if (versions.length) {
+    runVersionSelect.value = String(versions[0].id);
+    updateRunControlsState();
+    try {
+      await generateRunInputsTemplate();
+    } catch (_err) {
+      // keep UI usable even if template generation fails
+    }
+  }
+  await refreshRunArgPresets();
 }
 
 async function refreshTemplates() {
@@ -425,6 +589,7 @@ async function loadWorkflowDetails(workflowId) {
   const versions = await api(`/workflows/${workflowId}/versions`);
   const latestVersion = versions.length ? versions[0] : null;
   $("selected-workflow-id").value = workflowId;
+  setSelectedWorkflowListItem(workflowId);
   $("workflow-details").textContent = JSON.stringify(workflow, null, 2);
   $("workflow-versions").textContent = JSON.stringify(versions, null, 2);
   setValueIfPresent("ver-workflow-id", workflowId);
@@ -434,6 +599,7 @@ async function loadWorkflowDetails(workflowId) {
     editBtn.classList.remove("btn-link-disabled");
   }
   if (latestVersion) {
+    setValueIfPresent("ver-current-version-id", latestVersion.id);
     if ($("run-version-id")) {
       $("run-version-id").value = latestVersion.id;
     }
@@ -442,6 +608,7 @@ async function loadWorkflowDetails(workflowId) {
     }
     setValueIfPresent("ver-number", Number(latestVersion.version_number || 0) + 1);
   } else {
+    setValueIfPresent("ver-current-version-id", "");
     if ($("ver-definition")) {
       $("ver-definition").value = JSON.stringify(defaultDefinition, null, 2);
     }
@@ -450,6 +617,7 @@ async function loadWorkflowDetails(workflowId) {
   if ($("step-builder")) {
     syncStepsFromJson();
   }
+  updateCurrentWorkflowIndicator(workflow);
 }
 
 on("btn-create-workflow", "click", async () => {
@@ -566,11 +734,38 @@ on("btn-create-version", "click", async () => {
       body: JSON.stringify(payload),
     });
     toast(`Version created: #${created.id}`);
+    setValueIfPresent("ver-current-version-id", created.id);
     if ($("run-version-id")) {
       $("run-version-id").value = created.id;
     }
     await loadWorkflowDetails(workflowId);
     setActiveTab("runs");
+  } catch (err) {
+    toast(err.message, true);
+  }
+});
+
+on("btn-save-version", "click", async () => {
+  try {
+    const versionId = Number(($("ver-current-version-id") || {}).value);
+    if (!versionId) {
+      throw new Error("No current version selected to save");
+    }
+    syncJsonFromSteps();
+    const definition = JSON.parse($("ver-definition").value);
+    const payload = {
+      is_published: Boolean(($("ver-published") || {}).checked),
+      definition_json: definition,
+    };
+    const updated = await api(`/workflows/versions/${versionId}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    });
+    toast(`Saved current version: #${updated.id}`);
+    const workflowId = Number(($("ver-workflow-id") || {}).value);
+    if (workflowId) {
+      await loadWorkflowDetails(workflowId);
+    }
   } catch (err) {
     toast(err.message, true);
   }
@@ -622,6 +817,73 @@ on("run-workflow-id", "change", async () => {
   try {
     const workflowId = Number(($("run-workflow-id") || {}).value);
     await refreshRunVersionsForWorkflow(workflowId);
+    await refreshRunArgPresets();
+  } catch (err) {
+    toast(err.message, true);
+  }
+});
+
+on("editor-workflow-id", "change", async () => {
+  try {
+    const workflowId = Number(($("editor-workflow-id") || {}).value);
+    if (!workflowId) {
+      updateCurrentWorkflowIndicator(null);
+      return;
+    }
+    setValueIfPresent("selected-workflow-id", workflowId);
+    await loadWorkflowDetails(workflowId);
+    toast(`Loaded workflow #${workflowId}`);
+  } catch (err) {
+    toast(err.message, true);
+  }
+});
+
+on("run-version-id", "change", async () => {
+  updateRunControlsState();
+  try {
+    await refreshRunArgPresets();
+    if (Number(($("run-version-id") || {}).value) > 0) {
+      await generateRunInputsTemplate();
+      toast("Inputs template refreshed for selected version");
+    }
+  } catch (err) {
+    toast(err.message, true);
+  }
+});
+
+on("run-preset-id", "change", () => {
+  updateRunControlsState();
+});
+
+on("btn-save-run-preset", "click", async () => {
+  try {
+    const saved = await saveRunArgPreset();
+    setValueIfPresent("run-preset-name", saved.name || "");
+    await refreshRunArgPresets();
+    setValueIfPresent("run-preset-id", saved.id);
+    updateRunControlsState();
+    toast(`Saved preset: #${saved.id}`);
+  } catch (err) {
+    toast(err.message, true);
+  }
+});
+
+on("btn-load-run-preset", "click", async () => {
+  try {
+    await loadRunArgPreset();
+    toast("Loaded preset into run inputs");
+  } catch (err) {
+    toast(err.message, true);
+  }
+});
+
+on("btn-delete-run-preset", "click", async () => {
+  try {
+    await deleteRunArgPreset();
+    setValueIfPresent("run-preset-id", "");
+    await refreshRunArgPresets();
+    setValueIfPresent("run-preset-name", "");
+    toast("Deleted preset");
   } catch (err) {
     toast(err.message, true);
   }
@@ -650,8 +912,11 @@ on("btn-monitor-run", "click", async () => {
 });
 
 checkApi();
-if ($("workflow-list")) {
+if ($("workflow-list") || $("editor-workflow-id") || $("run-workflow-id")) {
   refreshWorkflows();
+}
+if ($("run-preset-id")) {
+  refreshRunArgPresets();
 }
 if ($("template-list")) {
   refreshTemplates();
@@ -662,13 +927,23 @@ if ($("step-type-select")) {
 if ($("step-builder")) {
   syncStepsFromJson();
 }
+updateRunControlsState();
 if (isDedicatedEditorPage) {
   const params = new URLSearchParams(window.location.search);
   const workflowId = Number(params.get("workflow_id"));
   if (workflowId) {
+    setValueIfPresent("editor-workflow-id", workflowId);
     loadWorkflowDetails(workflowId).catch((err) => toast(err.message, true));
-  } else {
-    toast("Missing workflow_id in URL. Open this page from Dashboard > Edit Workflow.", true);
+  } else if ($("workflow-details")) {
+    updateCurrentWorkflowIndicator(null);
+    $("workflow-details").textContent = JSON.stringify(
+      {
+        info: "No workflow selected yet.",
+        next_step: "Load a workflow by ID or open this page from Dashboard > Edit Workflow.",
+      },
+      null,
+      2
+    );
   }
 }
 document.querySelectorAll(".tab").forEach((tab) => {

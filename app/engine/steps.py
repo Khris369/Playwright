@@ -54,6 +54,25 @@ def _click(args: dict[str, Any], state: dict[str, Any]) -> StepResult:
     return StepResult(log=f"Clicked {selector}")
 
 
+def _click_by_role(args: dict[str, Any], state: dict[str, Any]) -> StepResult:
+    role = str(args.get("role", "button"))
+    name = str(args["name"])
+    scope_selector = args.get("scope_selector")
+    nth = int(args.get("nth", 0))
+    exact = bool(args.get("exact", True))
+    page = _page(state)
+    if page is not None:
+        root = page.locator(str(scope_selector)) if scope_selector else page
+        locator = root.get_by_role(role, name=name, exact=exact)
+        locator.nth(nth).click()
+        state["current_url"] = page.url
+    else:
+        clicks = state.setdefault("clicks", [])
+        clicks.append({"role": role, "name": name, "scope_selector": scope_selector, "nth": nth})
+    scope_part = f" within {scope_selector}" if scope_selector else ""
+    return StepResult(log=f"Clicked role={role} name={name}{scope_part} (nth={nth})")
+
+
 def _select_option(args: dict[str, Any], state: dict[str, Any]) -> StepResult:
     selector = str(args["selector"])
     value = str(args["value"])
@@ -157,6 +176,7 @@ STEP_HANDLERS: dict[str, Callable[[dict[str, Any], dict[str, Any]], StepResult]]
     "goto_url": _goto_url,
     "fill_input": _fill_input,
     "click": _click,
+    "click_by_role": _click_by_role,
     "select_option": _select_option,
     "wait_for_element": _wait_for_element,
     "assert_url_not_equal": _assert_url_not_equal,

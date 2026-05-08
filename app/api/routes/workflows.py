@@ -7,6 +7,7 @@ from app.schemas.workflow import (
     WorkflowResponse,
     WorkflowVersionCreate,
     WorkflowVersionResponse,
+    WorkflowVersionUpdate,
 )
 from app.services.workflow_repository import WorkflowRepository
 
@@ -63,6 +64,18 @@ def list_workflow_versions(workflow_id: int) -> list[WorkflowVersionResponse]:
 @router.get("/versions/{version_id}", response_model=WorkflowVersionResponse)
 def get_workflow_version(version_id: int) -> WorkflowVersionResponse:
     row = WorkflowRepository.get_workflow_version(version_id)
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Workflow version not found"
+        )
+    return WorkflowVersionResponse(**row)
+
+
+@router.put("/versions/{version_id}", response_model=WorkflowVersionResponse)
+def update_workflow_version(
+    version_id: int, payload: WorkflowVersionUpdate
+) -> WorkflowVersionResponse:
+    row = WorkflowRepository.update_workflow_version(version_id, payload)
     if row is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Workflow version not found"

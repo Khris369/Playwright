@@ -330,6 +330,18 @@ Improve reliability, debuggability, and operational safety.
 - Failures are diagnosable from UI/API logs.
 - System remains stable under concurrent runs.
 
+### Progress
+- Status: `in_progress`
+- Last updated: `2026-05-08`
+- Completed so far:
+  - Added more actionable run-step error surfacing through API/UI flow.
+  - Added guided run-input generation from workflow `{{inputs.*}}` placeholders.
+  - Added DB-backed run-arg presets for repeatable executions.
+- Remaining:
+  - retries/backoff strategies
+  - screenshot/video artifacts on failure
+  - structured correlation IDs and richer observability outputs
+
 ## Phase 8 - Security and Governance
 ### Objective
 Protect secrets and control access.
@@ -370,3 +382,31 @@ Prepare deployment, operations, and handover.
 3. Usability: Phases 5-6
 4. Reliability and Security: Phases 7-8
 5. Go-live: Phase 9
+
+## Post-Phase Delivery Notes (Completed)
+- Dedicated editor routing and focused editing:
+  - Added `/ui/editor` page for single-workflow editing.
+  - Dashboard `/ui` keeps workflow/version viewing and routes into editor.
+- Editor UX improvements:
+  - Workflow dropdown in editor.
+  - Active workflow indicator.
+  - Drag handle-only reordering to avoid text-input cursor conflicts.
+  - Side-by-side visual editor + JSON panel.
+- Version lifecycle updates:
+  - Added in-place save (`PUT /workflows/versions/{version_id}`) via "Save Current Version".
+  - Kept "Create New Version" for immutable progression when needed.
+- Step type catalog and extensibility:
+  - Added `step_types` table and API (`GET /step-types`).
+  - Added general step `click_by_role`.
+  - Added ticket-specific step chain:
+    - `ticket_select_scenario`
+    - `ticket_create_new_ticket`
+    - `ticket_fill_fields` (inline fields)
+    - `ticket_fill_fields_from_scenario`
+    - `ticket_submit`
+- Run UX improvements:
+  - Workflow/version dropdowns in Runs tab.
+  - Auto-select latest version and auto-generate inputs template.
+  - DB-backed run-arg presets (save/load/delete).
+- Execution mode note:
+  - Current default run path executes inline from API process to support headed browser visibility during interactive use.

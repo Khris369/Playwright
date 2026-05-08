@@ -21,15 +21,15 @@
   <main class="tab-content">
     <section class="tab-panel is-active" data-panel="workflows">
       <section class="card" style="margin-bottom: 14px;">
-        <h2>Workflow Editor</h2>
-        <p class="hint">Use the dedicated editor page for loading versions, drag-and-drop step editing, and creating new versions.</p>
-        <a class="btn-link" href="/ui/editor">Open Dedicated Editor</a>
+        <h2>Quick Start</h2>
+        <p class="hint">1) Create or import a workflow. 2) Open it in the editor. 3) Run it from the Runs tab.</p>
+        <a id="btn-open-editor" class="btn-link btn-link" href="/ui/editor">Open Dedicated Editor</a>
       </section>
 
       <div class="panel-grid two-col">
         <section class="card">
-          <h2>Create Workflow Shell</h2>
-          <p class="hint">This creates the workflow record only. Build and version steps in the dedicated editor.</p>
+          <h2>Create Workflow</h2>
+          <p class="hint">Creates a workflow record. Then add steps in the dedicated editor.</p>
           <div class="grid2">
             <input id="wf-name" placeholder="Workflow name">
             <input id="wf-status" placeholder="Status (active)" value="active">
@@ -48,7 +48,7 @@
 
       <div class="panel-grid two-col">
         <section class="card">
-          <h2>Selected Workflow</h2>
+          <h2>Selected Workflow (View)</h2>
           <div class="grid2">
             <input id="selected-workflow-id" placeholder="Workflow ID (int)">
             <button id="btn-load-workflow">Load By ID</button>
@@ -98,6 +98,7 @@
       <div class="panel-grid two-col">
         <section class="card">
           <h2>Trigger Run</h2>
+          <p class="hint">Choose a workflow, choose a version, generate inputs, then run.</p>
           <div class="grid2">
             <select id="run-workflow-id">
               <option value="">Select workflow...</option>
@@ -105,6 +106,17 @@
             <select id="run-version-id">
               <option value="">Select version...</option>
             </select>
+          </div>
+          <div class="grid2">
+            <input id="run-preset-name" placeholder="Preset name (e.g. Digi UAT)">
+            <select id="run-preset-id">
+              <option value="">Select saved preset...</option>
+            </select>
+          </div>
+          <div class="grid3">
+            <button id="btn-save-run-preset" type="button">Save Preset</button>
+            <button id="btn-load-run-preset" type="button">Load Preset</button>
+            <button id="btn-delete-run-preset" type="button">Delete Preset</button>
           </div>
           <button id="btn-generate-run-inputs" type="button">Generate Inputs Template</button>
           <textarea id="run-inputs" rows="8" placeholder='{"base_url":"https://example.com"}'></textarea>

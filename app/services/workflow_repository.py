@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from app.schemas.workflow import WorkflowCreate, WorkflowVersionCreate
+from app.schemas.workflow import WorkflowCreate, WorkflowVersionCreate, WorkflowVersionUpdate
 from app.services.db import get_db_cursor
 
 
@@ -113,6 +113,42 @@ class WorkflowRepository:
     @staticmethod
     def get_workflow_version(version_id: int) -> dict | None:
         with get_db_cursor() as (_, cursor):
+            cursor.execute(
+                """
+                SELECT id, workflow_id, version_number, is_published, definition_json, created_at
+                FROM workflow_versions
+                WHERE id = %s
+                """,
+                (version_id,),
+            )
+            row = cursor.fetchone()
+            if row is None:
+                return None
+            if isinstance(row.get("definition_json"), str):
+                row["definition_json"] = json.loads(row["definition_json"])
+            row["is_published"] = bool(row["is_published"])
+            return row
+
+    @staticmethod
+    def update_workflow_version(version_id: int, payload: WorkflowVersionUpdate) -> dict | None:
+        with get_db_cursor() as (_, cursor):
+            cursor.execute("SELECT id FROM workflow_versions WHERE id = %s", (version_id,))
+            if cursor.fetchone() is None:
+                return None
+
+            cursor.execute(
+                """
+                UPDATE workflow_versions
+                SET is_published = %s, definition_json = %s
+                WHERE id = %s
+                """,
+                (
+                    1 if payload.is_published else 0,
+                    json.dumps(payload.definition_json),
+                    version_id,
+                ),
+            )
+
             cursor.execute(
                 """
                 SELECT id, workflow_id, version_number, is_published, definition_json, created_at
