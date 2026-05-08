@@ -111,6 +111,48 @@ def _run_custom_action(args: dict[str, Any], state: dict[str, Any]) -> StepResul
         raise StepExecutionError(str(exc)) from exc
 
 
+def _ticket_select_scenario(args: dict[str, Any], state: dict[str, Any]) -> StepResult:
+    try:
+        log = execute_custom_action("ticket_select_scenario", args, state)
+        return StepResult(log=log)
+    except Exception as exc:
+        raise StepExecutionError(str(exc)) from exc
+
+
+def _ticket_create_new_ticket(args: dict[str, Any], state: dict[str, Any]) -> StepResult:
+    try:
+        log = execute_custom_action("ticket_create_new_ticket", args, state)
+        return StepResult(log=log)
+    except Exception as exc:
+        raise StepExecutionError(str(exc)) from exc
+
+
+def _ticket_fill_fields_from_scenario(
+    args: dict[str, Any], state: dict[str, Any]
+) -> StepResult:
+    try:
+        log = execute_custom_action("ticket_fill_fields_from_scenario", args, state)
+        return StepResult(log=log)
+    except Exception as exc:
+        raise StepExecutionError(str(exc)) from exc
+
+
+def _ticket_fill_fields(args: dict[str, Any], state: dict[str, Any]) -> StepResult:
+    try:
+        log = execute_custom_action("ticket_fill_fields", args, state)
+        return StepResult(log=log)
+    except Exception as exc:
+        raise StepExecutionError(str(exc)) from exc
+
+
+def _ticket_submit(args: dict[str, Any], state: dict[str, Any]) -> StepResult:
+    try:
+        log = execute_custom_action("ticket_submit", args, state)
+        return StepResult(log=log)
+    except Exception as exc:
+        raise StepExecutionError(str(exc)) from exc
+
+
 STEP_HANDLERS: dict[str, Callable[[dict[str, Any], dict[str, Any]], StepResult]] = {
     "goto_url": _goto_url,
     "fill_input": _fill_input,
@@ -120,6 +162,11 @@ STEP_HANDLERS: dict[str, Callable[[dict[str, Any], dict[str, Any]], StepResult]]
     "assert_url_not_equal": _assert_url_not_equal,
     "assert_text_visible": _assert_text_visible,
     "run_custom_action": _run_custom_action,
+    "ticket_select_scenario": _ticket_select_scenario,
+    "ticket_create_new_ticket": _ticket_create_new_ticket,
+    "ticket_fill_fields": _ticket_fill_fields,
+    "ticket_fill_fields_from_scenario": _ticket_fill_fields_from_scenario,
+    "ticket_submit": _ticket_submit,
 }
 
 

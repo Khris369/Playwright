@@ -5,6 +5,12 @@ const on = (id, event, handler) => {
     el.addEventListener(event, handler);
   }
 };
+const setValueIfPresent = (id, value) => {
+  const el = $(id);
+  if (el) {
+    el.value = value;
+  }
+};
 
 const defaultDefinition = {
   steps: [
@@ -23,10 +29,39 @@ const stepTemplates = {
   assert_url_not_equal: { url: "" },
   assert_text_visible: { text: "" },
   run_custom_action: { action: "" },
+  ticket_select_scenario: { scenario_name: "{{inputs.scenario_name}}" },
+  ticket_create_new_ticket: {},
+  ticket_fill_fields: {
+    fields: [
+      { label: "Reference ID", type: "text", value: "AUTO-REF-001" },
+      { label: "Description", type: "text", value: "Created by workflow builder." }
+    ]
+  },
+  ticket_fill_fields_from_scenario: {
+    scenario_name: "{{inputs.scenario_name}}",
+    brand: "{{inputs.brand}}",
+    ticket_data_path: "{{inputs.ticket_data_path}}"
+  },
+  ticket_submit: {},
 };
+const defaultStepTypeKeys = Object.keys(stepTemplates);
+let availableStepTypes = [...defaultStepTypeKeys];
+
+function getDefaultArgsForStepType(stepType) {
+  const template = stepTemplates[stepType];
+  if (template && typeof template === "object") {
+    return JSON.parse(JSON.stringify(template));
+  }
+  return {};
+}
 
 let editorSteps = [];
 let draggedStepIndex = null;
+const isDedicatedEditorPage = window.location.pathname === "/ui/editor";
+
+function editorUrlFor(workflowId) {
+  return `/ui/editor?workflow_id=${encodeURIComponent(workflowId)}`;
+}
 
 if ($("ver-definition")) {
   $("ver-definition").value = JSON.stringify(defaultDefinition, null, 2);
@@ -44,6 +79,48 @@ function parseDefinitionJson() {
     parsed.steps = [];
   }
   return parsed;
+}
+
+function getStepTypeOptionsHtml(selectedType) {
+  const known = new Set(availableStepTypes);
+  const options = [...availableStepTypes];
+  if (selectedType && !known.has(selectedType)) {
+    options.push(selectedType);
+  }
+  return options
+    .map((type) => `<option value="${type}" ${type === selectedType ? "selected" : ""}>${type}</option>`)
+    .join("");
+}
+
+function populateStepTypePalette() {
+  const select = $("step-type-select");
+  if (!select) {
+    return;
+  }
+  const current = select.value;
+  select.innerHTML = availableStepTypes
+    .map((type) => `<option value="${type}" ${type === current ? "selected" : ""}>${type}</option>`)
+    .join("");
+  if (!select.value && availableStepTypes.length) {
+    select.value = availableStepTypes[0];
+  }
+}
+
+async function refreshStepTypes() {
+  try {
+    const rows = await api("/step-types");
+    const keys = (rows || [])
+      .map((row) => String(row.key || "").trim())
+      .filter((key) => key.length > 0);
+    if (keys.length) {
+      availableStepTypes = keys;
+    } else {
+      availableStepTypes = [...defaultStepTypeKeys];
+    }
+  } catch (err) {
+    availableStepTypes = [...defaultStepTypeKeys];
+  }
+  populateStepTypePalette();
 }
 
 function syncJsonFromSteps() {
@@ -75,19 +152,18 @@ function renderStepBuilder() {
   }
   builder.innerHTML = editorSteps
     .map((step, index) => `
-      <div class="step-card" draggable="true" data-step-index="${index}">
+      <div class="step-card" data-step-index="${index}">
         <div class="step-card-header">
           <div class="step-card-title">Step ${index + 1}</div>
-          <div class="step-drag" title="Drag to reorder">::</div>
+          <div class="step-drag" draggable="true" data-drag-handle="true" data-step-index="${index}" title="Drag to reorder">::</div>
         </div>
         <div class="grid2">
           <select data-field="type" data-step-index="${index}">
-            ${Object.keys(stepTemplates)
-              .map((type) => `<option value="${type}" ${type === step.type ? "selected" : ""}>${type}</option>`)
-              .join("")}
+            ${getStepTypeOptionsHtml(step.type)}
           </select>
-          <button class="step-remove" type="button" data-action="remove" data-step-index="${index}">Remove</button>
+          <button class="step-default" type="button" data-action="default-args" data-step-index="${index}">Default Args</button>
         </div>
+        <button class="step-remove" type="button" data-action="remove" data-step-index="${index}">Remove</button>
         <textarea data-field="args" data-step-index="${index}" spellcheck="false">${JSON.stringify(step.args || {}, null, 2)}</textarea>
       </div>
     `)
@@ -107,14 +183,20 @@ function renderStepBuilder() {
       const index = Number(el.getAttribute("data-step-index"));
       const nextType = el.value;
       editorSteps[index].type = nextType;
-      if (!editorSteps[index].args || typeof editorSteps[index].args !== "object") {
-        editorSteps[index].args = {};
-      }
-      if (Object.keys(editorSteps[index].args).length === 0 && stepTemplates[nextType]) {
-        editorSteps[index].args = { ...stepTemplates[nextType] };
-      }
+      editorSteps[index].args = getDefaultArgsForStepType(nextType);
       syncJsonFromSteps();
       renderStepBuilder();
+    });
+  });
+
+  builder.querySelectorAll("[data-action='default-args']").forEach((el) => {
+    el.addEventListener("click", () => {
+      const index = Number(el.getAttribute("data-step-index"));
+      const stepType = editorSteps[index]?.type || "click";
+      editorSteps[index].args = getDefaultArgsForStepType(stepType);
+      syncJsonFromSteps();
+      renderStepBuilder();
+      toast(`Reset args to defaults for step ${index + 1}`);
     });
   });
 
@@ -134,15 +216,26 @@ function renderStepBuilder() {
     });
   });
 
-  builder.querySelectorAll(".step-card").forEach((card) => {
-    card.addEventListener("dragstart", () => {
-      draggedStepIndex = Number(card.getAttribute("data-step-index"));
-      card.classList.add("dragging");
+  builder.querySelectorAll("[data-drag-handle='true']").forEach((handle) => {
+    handle.addEventListener("dragstart", () => {
+      const stepIndex = Number(handle.getAttribute("data-step-index"));
+      draggedStepIndex = stepIndex;
+      const card = builder.querySelector(`.step-card[data-step-index='${stepIndex}']`);
+      if (card) {
+        card.classList.add("dragging");
+      }
     });
-    card.addEventListener("dragend", () => {
+    handle.addEventListener("dragend", () => {
+      const stepIndex = Number(handle.getAttribute("data-step-index"));
       draggedStepIndex = null;
-      card.classList.remove("dragging");
+      const card = builder.querySelector(`.step-card[data-step-index='${stepIndex}']`);
+      if (card) {
+        card.classList.remove("dragging");
+      }
     });
+  });
+
+  builder.querySelectorAll(".step-card").forEach((card) => {
     card.addEventListener("dragover", (event) => {
       event.preventDefault();
     });
@@ -168,6 +261,56 @@ function setActiveTab(tabName) {
   document.querySelectorAll(".tab-panel").forEach((panel) => {
     panel.classList.toggle("is-active", panel.getAttribute("data-panel") === tabName);
   });
+}
+
+function collectInputPaths(value, outputSet) {
+  if (typeof value === "string") {
+    const matches = value.matchAll(/\{\{\s*inputs\.([a-zA-Z0-9_.]+)\s*\}\}/g);
+    for (const match of matches) {
+      if (match[1]) {
+        outputSet.add(match[1]);
+      }
+    }
+    return;
+  }
+  if (Array.isArray(value)) {
+    value.forEach((item) => collectInputPaths(item, outputSet));
+    return;
+  }
+  if (value && typeof value === "object") {
+    Object.values(value).forEach((item) => collectInputPaths(item, outputSet));
+  }
+}
+
+function setNestedValue(target, dottedPath, value) {
+  const parts = dottedPath.split(".");
+  let current = target;
+  for (let i = 0; i < parts.length - 1; i += 1) {
+    const part = parts[i];
+    if (!current[part] || typeof current[part] !== "object") {
+      current[part] = {};
+    }
+    current = current[part];
+  }
+  current[parts[parts.length - 1]] = value;
+}
+
+async function generateRunInputsTemplate() {
+  const versionId = Number(($("run-version-id") || {}).value);
+  if (!versionId) {
+    throw new Error("Enter Workflow Version ID first");
+  }
+
+  const version = await api(`/workflows/versions/${versionId}`);
+  const definition = version.definition_json || {};
+  const inputPaths = new Set();
+  collectInputPaths(definition, inputPaths);
+
+  const generated = {};
+  [...inputPaths].sort().forEach((path) => {
+    setNestedValue(generated, path, "");
+  });
+  $("run-inputs").value = JSON.stringify(generated, null, 2);
 }
 
 function toast(message, isError = false) {
@@ -207,6 +350,10 @@ function workflowRow(wf) {
   </div>`;
 }
 
+function workflowOption(wf) {
+  return `<option value="${wf.id}">#${wf.id} ${wf.name || "(unnamed)"}</option>`;
+}
+
 function templateRow(tpl) {
   return `<div class="item clickable" data-template-id="${tpl.id}" data-template-name="${tpl.name || "Template"}">
     <div><strong>#${tpl.id}</strong> ${tpl.name || "(unnamed template)"}</div>
@@ -217,12 +364,42 @@ function templateRow(tpl) {
 async function refreshWorkflows() {
   const items = await api("/workflows");
   $("workflow-list").innerHTML = items.length ? items.map(workflowRow).join("") : "<div class='muted'>No workflows yet.</div>";
+  const runWorkflowSelect = $("run-workflow-id");
+  if (runWorkflowSelect) {
+    runWorkflowSelect.innerHTML =
+      `<option value="">Select workflow...</option>${items.map(workflowOption).join("")}`;
+  }
+  const canLoadDetails = Boolean($("selected-workflow-id") && $("workflow-details") && $("workflow-versions"));
   document.querySelectorAll("#workflow-list .item.clickable").forEach((el) => {
     el.addEventListener("click", () => {
+      if (!canLoadDetails) {
+        return;
+      }
       const workflowId = Number(el.getAttribute("data-workflow-id"));
       loadWorkflowDetails(workflowId);
     });
   });
+}
+
+async function refreshRunVersionsForWorkflow(workflowId) {
+  const runVersionSelect = $("run-version-id");
+  if (!runVersionSelect) {
+    return;
+  }
+  if (!workflowId) {
+    runVersionSelect.innerHTML = `<option value="">Select version...</option>`;
+    return;
+  }
+
+  const versions = await api(`/workflows/${workflowId}/versions`);
+  runVersionSelect.innerHTML = versions.length
+    ? versions
+        .map(
+          (v) =>
+            `<option value="${v.id}">v${v.version_number} (${v.is_published ? "published" : "draft"}) - id ${v.id}</option>`
+        )
+        .join("")
+    : `<option value="">No versions found</option>`;
 }
 
 async function refreshTemplates() {
@@ -241,24 +418,38 @@ async function refreshTemplates() {
 }
 
 async function loadWorkflowDetails(workflowId) {
+  if (!$("selected-workflow-id") || !$("workflow-details") || !$("workflow-versions")) {
+    return;
+  }
   const workflow = await api(`/workflows/${workflowId}`);
   const versions = await api(`/workflows/${workflowId}/versions`);
   const latestVersion = versions.length ? versions[0] : null;
   $("selected-workflow-id").value = workflowId;
   $("workflow-details").textContent = JSON.stringify(workflow, null, 2);
   $("workflow-versions").textContent = JSON.stringify(versions, null, 2);
-  $("ver-workflow-id").value = workflowId;
+  setValueIfPresent("ver-workflow-id", workflowId);
+  const editBtn = $("btn-edit-workflow");
+  if (editBtn) {
+    editBtn.href = editorUrlFor(workflowId);
+    editBtn.classList.remove("btn-link-disabled");
+  }
   if (latestVersion) {
     if ($("run-version-id")) {
       $("run-version-id").value = latestVersion.id;
     }
-    $("ver-definition").value = JSON.stringify(latestVersion.definition_json || defaultDefinition, null, 2);
-    $("ver-number").value = Number(latestVersion.version_number || 0) + 1;
+    if ($("ver-definition")) {
+      $("ver-definition").value = JSON.stringify(latestVersion.definition_json || defaultDefinition, null, 2);
+    }
+    setValueIfPresent("ver-number", Number(latestVersion.version_number || 0) + 1);
   } else {
-    $("ver-definition").value = JSON.stringify(defaultDefinition, null, 2);
-    $("ver-number").value = 1;
+    if ($("ver-definition")) {
+      $("ver-definition").value = JSON.stringify(defaultDefinition, null, 2);
+    }
+    setValueIfPresent("ver-number", 1);
   }
-  syncStepsFromJson();
+  if ($("step-builder")) {
+    syncStepsFromJson();
+  }
 }
 
 on("btn-create-workflow", "click", async () => {
@@ -270,11 +461,15 @@ on("btn-create-workflow", "click", async () => {
     };
     const created = await api("/workflows", { method: "POST", body: JSON.stringify(payload) });
     toast(`Workflow created: #${created.id}`);
-    $("ver-workflow-id").value = created.id;
-    $("selected-workflow-id").value = created.id;
-    $("ver-definition").value = JSON.stringify(defaultDefinition, null, 2);
-    $("ver-number").value = 1;
-    syncStepsFromJson();
+    setValueIfPresent("ver-workflow-id", created.id);
+    setValueIfPresent("selected-workflow-id", created.id);
+    if ($("ver-definition")) {
+      $("ver-definition").value = JSON.stringify(defaultDefinition, null, 2);
+    }
+    setValueIfPresent("ver-number", 1);
+    if ($("step-builder")) {
+      syncStepsFromJson();
+    }
     await refreshWorkflows();
   } catch (err) {
     toast(err.message, true);
@@ -324,9 +519,9 @@ on("btn-import-template", "click", async () => {
       body: JSON.stringify(payload),
     });
     $("template-import-result").textContent = JSON.stringify(imported, null, 2);
-    $("selected-workflow-id").value = imported.workflow.id;
-    $("ver-workflow-id").value = imported.workflow.id;
-    $("run-version-id").value = imported.version.id;
+    setValueIfPresent("selected-workflow-id", imported.workflow.id);
+    setValueIfPresent("ver-workflow-id", imported.workflow.id);
+    setValueIfPresent("run-version-id", imported.version.id);
     await refreshWorkflows();
     await loadWorkflowDetails(imported.workflow.id);
     toast(`Imported template #${templateId} -> workflow #${imported.workflow.id}`);
@@ -344,6 +539,16 @@ on("btn-load-workflow", "click", async () => {
   } catch (err) {
     toast(err.message, true);
   }
+});
+
+on("btn-edit-workflow", "click", (event) => {
+  const workflowId = Number(($("selected-workflow-id") || {}).value);
+  if (!workflowId) {
+    event.preventDefault();
+    toast("Load a workflow first", true);
+    return;
+  }
+  window.location.href = editorUrlFor(workflowId);
 });
 
 on("btn-create-version", "click", async () => {
@@ -375,7 +580,7 @@ on("btn-add-step", "click", () => {
   const stepType = $("step-type-select").value;
   editorSteps.push({
     type: stepType,
-    args: { ...(stepTemplates[stepType] || {}) },
+    args: getDefaultArgsForStepType(stepType),
   });
   syncJsonFromSteps();
   renderStepBuilder();
@@ -413,6 +618,24 @@ on("btn-trigger-run", "click", async () => {
   }
 });
 
+on("run-workflow-id", "change", async () => {
+  try {
+    const workflowId = Number(($("run-workflow-id") || {}).value);
+    await refreshRunVersionsForWorkflow(workflowId);
+  } catch (err) {
+    toast(err.message, true);
+  }
+});
+
+on("btn-generate-run-inputs", "click", async () => {
+  try {
+    await generateRunInputsTemplate();
+    toast("Generated inputs template from workflow version");
+  } catch (err) {
+    toast(err.message, true);
+  }
+});
+
 on("btn-monitor-run", "click", async () => {
   try {
     const runId = Number($("monitor-run-id").value);
@@ -433,8 +656,20 @@ if ($("workflow-list")) {
 if ($("template-list")) {
   refreshTemplates();
 }
+if ($("step-type-select")) {
+  refreshStepTypes();
+}
 if ($("step-builder")) {
   syncStepsFromJson();
+}
+if (isDedicatedEditorPage) {
+  const params = new URLSearchParams(window.location.search);
+  const workflowId = Number(params.get("workflow_id"));
+  if (workflowId) {
+    loadWorkflowDetails(workflowId).catch((err) => toast(err.message, true));
+  } else {
+    toast("Missing workflow_id in URL. Open this page from Dashboard > Edit Workflow.", true);
+  }
 }
 document.querySelectorAll(".tab").forEach((tab) => {
   tab.addEventListener("click", () => setActiveTab(tab.getAttribute("data-tab")));

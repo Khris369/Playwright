@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+
 def _xpath_literal(value: str) -> str:
     if "'" not in value:
         return f"'{value}'"
@@ -105,23 +106,30 @@ def _fill_field(scope: Any, field: dict[str, Any]) -> None:
     locator.fill(str(value))
 
 
-def execute_custom_action(action: str, args: dict[str, Any], state: dict[str, Any]) -> str:
-    page = state.get("page")
-    if page is None:
-        raise RuntimeError("Custom action requires browser page context.")
+def _action_select_ticket_scenario(args: dict[str, Any], page: Any) -> str:
+    scenario_name = str(args.get("scenario_name", "")).strip()
+    if not scenario_name:
+        raise RuntimeError("ticket_select_scenario requires scenario_name")
+    _select_scenario(page, scenario_name)
+    return f"Selected scenario: {scenario_name}"
 
-    if action != "create_ticket_flow":
-        raise RuntimeError(f"Unsupported custom action: {action}")
 
+def _action_create_new_ticket(_: dict[str, Any], page: Any) -> str:
+    page.get_by_role("button", name="Create New Ticket").click()
+    page.wait_for_timeout(1500)
+    return "Clicked Create New Ticket"
+
+
+def _action_fill_ticket_fields_from_scenario(
+    args: dict[str, Any], page: Any, state: dict[str, Any]
+) -> str:
     scenario_name = str(args.get("scenario_name", "")).strip()
     brand = str(args.get("brand", "")).strip()
     ticket_data_path = str(args.get("ticket_data_path", "test_data/ticket_scenarios.json"))
     if not scenario_name or not brand:
-        raise RuntimeError("create_ticket_flow requires scenario_name and brand")
-
-    _select_scenario(page, scenario_name)
-    page.get_by_role("button", name="Create New Ticket").click()
-    page.wait_for_timeout(1500)
+        raise RuntimeError(
+            "ticket_fill_fields_from_scenario requires scenario_name and brand"
+        )
 
     scope, ticket_suffix = _get_new_ticket_scope(page)
     fields = _load_ticket_fields(ticket_data_path, scenario_name, brand)
@@ -131,6 +139,82 @@ def execute_custom_action(action: str, args: dict[str, Any], state: dict[str, An
             scoped["selector"] = scoped["selector"].replace("{ticket_suffix}", ticket_suffix)
         _fill_field(scope, scoped)
 
+    state["ticket_scope"] = scope
+    state["ticket_suffix"] = ticket_suffix
+    return (
+        f"Filled ticket fields from scenario '{scenario_name}' for brand '{brand}' "
+        f"(fields={len(fields)})"
+    )
+
+
+def _action_fill_ticket_fields(
+    args: dict[str, Any], page: Any, state: dict[str, Any]
+) -> str:
+    fields = args.get("fields")
+    if not isinstance(fields, list) or not fields:
+        raise RuntimeError("ticket_fill_fields requires non-empty fields list")
+
+    scope, ticket_suffix = _get_new_ticket_scope(page)
+    for field in fields:
+        if not isinstance(field, dict):
+            raise RuntimeError("ticket_fill_fields fields must be objects")
+        scoped = dict(field)
+        if "selector" in scoped and isinstance(scoped["selector"], str):
+            scoped["selector"] = scoped["selector"].replace("{ticket_suffix}", ticket_suffix)
+        _fill_field(scope, scoped)
+
+    state["ticket_scope"] = scope
+    state["ticket_suffix"] = ticket_suffix
+    return f"Filled ticket fields from inline args (fields={len(fields)})"
+
+
+def _action_submit_ticket(_: dict[str, Any], page: Any, state: dict[str, Any]) -> str:
+    scope = state.get("ticket_scope")
+    if scope is None:
+        scope, ticket_suffix = _get_new_ticket_scope(page)
+        state["ticket_scope"] = scope
+        state["ticket_suffix"] = ticket_suffix
     scope.get_by_role("button", name="Submit").click()
     page.get_by_role("button", name="Yes").click()
-    return f"Executed custom action create_ticket_flow for brand={brand}, scenario={scenario_name}"
+    return "Submitted ticket and confirmed dialog"
+
+
+def _action_create_ticket_flow(
+    args: dict[str, Any], page: Any, state: dict[str, Any]
+) -> str:
+    scenario_name = str(args.get("scenario_name", "")).strip()
+    brand = str(args.get("brand", "")).strip()
+    if not scenario_name or not brand:
+        raise RuntimeError("create_ticket_flow requires scenario_name and brand")
+
+    _action_select_ticket_scenario(args, page)
+    _action_create_new_ticket(args, page)
+    _action_fill_ticket_fields_from_scenario(args, page, state)
+    _action_submit_ticket(args, page, state)
+    return (
+        f"Executed custom action create_ticket_flow for brand={brand}, "
+        f"scenario={scenario_name}"
+    )
+
+
+def execute_custom_action(action: str, args: dict[str, Any], state: dict[str, Any]) -> str:
+    page = state.get("page")
+    if page is None:
+        raise RuntimeError("Custom action requires browser page context.")
+    action_map = {
+        "create_ticket_flow": lambda: _action_create_ticket_flow(args, page, state),
+        "ticket_select_scenario": lambda: _action_select_ticket_scenario(args, page),
+        "ticket_create_new_ticket": lambda: _action_create_new_ticket(args, page),
+        "ticket_fill_fields": lambda: _action_fill_ticket_fields(args, page, state),
+        "ticket_fill_fields_from_scenario": lambda: _action_fill_ticket_fields_from_scenario(
+            args, page, state
+        ),
+        "ticket_submit": lambda: _action_submit_ticket(args, page, state),
+    }
+    runner = action_map.get(action)
+    if runner is None:
+        supported = ", ".join(sorted(action_map.keys()))
+        raise RuntimeError(
+            f"Unsupported custom action: {action}. Supported actions: {supported}"
+        )
+    return runner()

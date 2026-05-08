@@ -58,3 +58,13 @@ def create_workflow_version(
 def list_workflow_versions(workflow_id: int) -> list[WorkflowVersionResponse]:
     rows = WorkflowRepository.list_workflow_versions(workflow_id)
     return [WorkflowVersionResponse(**row) for row in rows]
+
+
+@router.get("/versions/{version_id}", response_model=WorkflowVersionResponse)
+def get_workflow_version(version_id: int) -> WorkflowVersionResponse:
+    row = WorkflowRepository.get_workflow_version(version_id)
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Workflow version not found"
+        )
+    return WorkflowVersionResponse(**row)

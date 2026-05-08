@@ -13,73 +13,47 @@
   </header>
 
   <main class="tab-content">
-    <section class="tab-panel is-active" data-panel="workflows">
-      <div class="card" style="margin-bottom: 14px;">
-        <a href="/ui">Back to Dashboard</a>
-      </div>
+    <section class="card" style="margin-bottom: 14px;">
+      <a href="/ui">Back to Dashboard</a>
+      <p class="hint">This page edits one workflow only. Open it from Dashboard using the "Edit Workflow" button.</p>
+    </section>
 
-      <div class="panel-grid two-col">
-        <section class="card">
-          <h2>Create Workflow Shell</h2>
-          <p class="hint">This creates the workflow record. Steps are added in "Version Editor" below.</p>
-          <div class="grid2">
-            <input id="wf-name" placeholder="Workflow name">
-            <input id="wf-status" placeholder="Status (active)" value="active">
-          </div>
-          <textarea id="wf-description" rows="2" placeholder="Description"></textarea>
-          <button id="btn-create-workflow">Create Workflow</button>
-        </section>
-
-        <section class="card">
-          <h2>Workflow List</h2>
-          <button id="btn-refresh-workflows">Refresh</button>
-          <p class="hint">Click a workflow to load details and versions.</p>
-          <div id="workflow-list" class="list"></div>
-        </section>
-      </div>
-
-      <section class="card version-editor-card">
-        <h2>Version Editor</h2>
-        <p class="hint">When you load a workflow, the latest version is auto-loaded here for quick editing.</p>
-        <div class="grid3">
-          <input id="ver-workflow-id" placeholder="Workflow ID (int)">
-          <input id="ver-number" type="number" value="1" min="1" placeholder="Version number">
-          <label><input id="ver-published" type="checkbox" checked> Published</label>
+    <div class="panel-grid two-col">
+      <section class="card">
+        <h2>Workflow</h2>
+        <div class="grid2">
+          <input id="selected-workflow-id" placeholder="Workflow ID (int)">
+          <button id="btn-load-workflow">Load Workflow</button>
         </div>
-        <div class="builder-toolbar">
-          <select id="step-type-select">
-            <option value="goto_url">goto_url</option>
-            <option value="fill_input">fill_input</option>
-            <option value="click">click</option>
-            <option value="select_option">select_option</option>
-            <option value="wait_for_element">wait_for_element</option>
-            <option value="assert_url_not_equal">assert_url_not_equal</option>
-            <option value="assert_text_visible">assert_text_visible</option>
-            <option value="run_custom_action">run_custom_action</option>
-          </select>
-          <button id="btn-add-step" type="button">Add Step</button>
-          <button id="btn-sync-from-json" type="button">Load From JSON</button>
-        </div>
-        <div id="step-builder" class="step-builder"></div>
-        <textarea id="ver-definition" rows="18"></textarea>
-        <button id="btn-create-version">Create Version</button>
+        <pre id="workflow-details" class="json"></pre>
       </section>
 
-      <div class="panel-grid two-col">
-        <section class="card">
-          <h2>Selected Workflow</h2>
-          <div class="grid2">
-            <input id="selected-workflow-id" placeholder="Workflow ID (int)">
-            <button id="btn-load-workflow">Load By ID</button>
-          </div>
-          <pre id="workflow-details" class="json"></pre>
-        </section>
+      <section class="card">
+        <h2>Versions</h2>
+        <pre id="workflow-versions" class="json"></pre>
+      </section>
+    </div>
 
-        <section class="card">
-          <h2>Versions</h2>
-          <pre id="workflow-versions" class="json"></pre>
-        </section>
+    <section class="card version-editor-card">
+      <h2>Version Editor</h2>
+      <p class="hint">Latest version auto-loads. Modify steps below and create the next version.</p>
+      <div class="grid3">
+        <input id="ver-workflow-id" placeholder="Workflow ID (int)">
+        <input id="ver-number" type="number" value="1" min="1" placeholder="Version number">
+        <label><input id="ver-published" type="checkbox" checked> Published</label>
       </div>
+      <div class="builder-toolbar">
+        <select id="step-type-select">
+          <option value="">Loading step types...</option>
+        </select>
+        <button id="btn-add-step" type="button">Add Step</button>
+        <button id="btn-sync-from-json" type="button">Load From JSON</button>
+      </div>
+      <div class="editor-split">
+        <div id="step-builder" class="step-builder"></div>
+        <textarea id="ver-definition" rows="18"></textarea>
+      </div>
+      <button id="btn-create-version">Create Version</button>
     </section>
   </main>
 
