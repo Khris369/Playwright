@@ -53,8 +53,23 @@ Expected: `status = ok`.
 
 4. Functional smoke:
 - Create/import workflow.
-- Open editor and save current version.
+- Open editor, select revision, create next version, and save current version.
 - In Runs tab: select workflow/version, generate input template, save/load preset, trigger run.
+
+## Current UX Notes (Implemented)
+- Dashboard `/ui` now combines workflow selection and editing in one primary editor card.
+- Workflow create panel is collapsible (`+ Create New Workflow`).
+- Workflow selector is active-only; deleting workflow sets status to `inactive`.
+- Revision is selected from a revision dropdown per workflow (`ver-revision-id`), not typed manually.
+- "Create Next Version" clones current definition into next revision and switches editor context to new revision.
+- "Save Version" persists current selected revision in-place.
+- Editor definition JSON is in a right slide-out sidebar (`JSON Preview`).
+- Step cards support:
+  - collapsed summary-first view
+  - drag-and-drop reorder from collapsed state
+  - per-step 3-dot menu: Insert Above/Below, Duplicate
+  - visible remove action
+- Editor top header block is sticky (title/save/workflow selector/preview section).
 
 ## Optional Queue Mode (Advanced / Future Toggle)
 If you reintroduce queue dispatch in route logic:

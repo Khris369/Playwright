@@ -36,14 +36,19 @@ Enable non-developer or low-code users to:
 ## Current UI Capability (Implemented)
 - Dashboard page (`/ui`) for workflow/template/run operations.
 - Dedicated editor page (`/ui/editor`) focused on one workflow at a time.
-- Workflow viewing and version viewing on dashboard, with explicit "Edit Workflow" routing to editor.
+- Workflow viewing and editing are now unified in a single primary editor card on dashboard.
 - Version editor with:
   - phase-1 drag-and-drop linear step cards
   - step add/remove/reorder
   - default args generation per step type
   - inline step args JSON editing
-  - synchronized raw `definition_json` view
-  - save current version (in-place) and create new version
+  - synchronized raw `definition_json` view via JSON sidebar drawer
+  - save current version (in-place) and create next version
+  - sticky editor header for top controls
+  - collapsible create-workflow panel
+  - revision dropdown selector (per-workflow version list)
+  - collapsible step cards with summary-first display
+  - per-step action menu (insert above/below, duplicate) + remove
 - Runs experience with:
   - workflow dropdown + version dropdown
   - generated run-input template from `{{inputs.*}}`
@@ -128,8 +133,9 @@ Call-platform-specific steps from `test_call.py` will be implemented as a starte
 
 ## API Endpoints (Current Highlights)
 - `POST /workflows`
-- `GET /workflows`
+- `GET /workflows` (supports `active_only` filter)
 - `GET /workflows/{id}`
+- `DELETE /workflows/{id}` (soft delete to inactive)
 - `POST /workflows/{id}/versions`
 - `GET /workflows/{id}/versions`
 - `GET /workflows/versions/{version_id}`
@@ -146,6 +152,9 @@ Call-platform-specific steps from `test_call.py` will be implemented as a starte
 - `GET /run-arg-presets`
 - `PUT /run-arg-presets/{preset_id}`
 - `DELETE /run-arg-presets/{preset_id}`
+
+Behavioral notes:
+- Run-arg presets are soft-deleted (`isActive=0`) and active-filtered in reads/updates.
 
 ## Implementation Status
 Completed:

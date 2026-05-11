@@ -31,6 +31,10 @@ Key columns:
 - `status` VARCHAR(30) NOT NULL default `active`
 - `created_at`, `updated_at`
 
+Current behavior:
+- Workflow delete in UI/API is a soft delete (`status = 'inactive'`).
+- Workflow dropdowns in editor/dashboard use active-only filtering.
+
 ### 2) `workflow_versions`
 Versioned definitions for each workflow.
 
@@ -109,8 +113,13 @@ Key columns:
 - `name` VARCHAR(120) NOT NULL
 - `workflow_id` INT NULL
 - `workflow_version_id` INT NULL
+- `isActive` TINYINT(1) NOT NULL default 1
 - `inputs_json` JSON NOT NULL
 - `created_at`, `updated_at`
+
+Current behavior:
+- Preset delete is soft delete (`isActive = 0`).
+- Preset read/list/update flows only operate on active rows (`isActive = 1`).
 
 ## Operational Notes
 - Schema is maintained with additive SQL files; no migration framework is required.

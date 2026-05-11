@@ -410,3 +410,23 @@ Prepare deployment, operations, and handover.
   - DB-backed run-arg presets (save/load/delete).
 - Execution mode note:
   - Current default run path executes inline from API process to support headed browser visibility during interactive use.
+
+## Post-Phase Delivery Notes (Latest UI/Behavior Updates)
+- Workflow lifecycle updates:
+  - Added workflow soft delete endpoint behavior (`DELETE /workflows/{id}` -> `status='inactive'`).
+  - Added active-only workflow listing support via query filter.
+- Run arg preset lifecycle updates:
+  - Switched to soft delete (`isActive=0`) and active-only retrieval/update behavior.
+- Editor consolidation and UX:
+  - Combined workflow selector + editor into one card in dashboard and dedicated editor.
+  - Added collapsible create-workflow panel.
+  - Added sticky editor header section with top-row save action.
+  - Replaced freeform revision number with revision dropdown tied to selected workflow versions.
+  - "Create Next Version" now creates next revision from current editor state and switches to it.
+  - Added JSON drawer sidebar for definition preview/edit.
+- Step builder UX:
+  - Added step summary block (title, target, value, sentence summary).
+  - Added collapsible step cards showing summary when collapsed.
+  - Preserved drag-and-drop and per-step menu actions while collapsed.
+  - Added three-dot action menu: Insert Above, Insert Below, Duplicate.
+  - Kept Remove as explicit visible action.
