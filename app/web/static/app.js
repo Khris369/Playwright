@@ -27,6 +27,7 @@ const stepTemplates = {
   click_by_role: { role: "button", name: "Submit", scope_selector: "", nth: 0, exact: true },
   select_option: { selector: "", value: "" },
   wait_for_element: { selector: "" },
+  wait_timeout: { timeout_ms: 1000 },
   assert_url_not_equal: { url: "" },
   assert_text_visible: { text: "" },
   run_custom_action: { action: "" },
@@ -362,7 +363,7 @@ async function refreshRunArgPresets() {
   updateRunControlsState();
 }
 
-async function saveRunArgPreset() {
+async function saveRunArgPreset(isNew = false) {
   const name = String(($("run-preset-name") || {}).value || "").trim();
   if (!name) {
     throw new Error("Preset name is required");
@@ -377,7 +378,7 @@ async function saveRunArgPreset() {
     workflow_version_id: versionId,
     inputs_json: inputs,
   };
-  if (selectedPresetId) {
+  if (selectedPresetId && !isNew) {
     return api(`/run-arg-presets/${selectedPresetId}`, {
       method: "PUT",
       body: JSON.stringify(payload),
@@ -891,12 +892,25 @@ on("run-preset-id", "change", () => {
 
 on("btn-save-run-preset", "click", async () => {
   try {
-    const saved = await saveRunArgPreset();
+    const saved = await saveRunArgPreset(false);
     setValueIfPresent("run-preset-name", saved.name || "");
     await refreshRunArgPresets();
     setValueIfPresent("run-preset-id", saved.id);
     updateRunControlsState();
     toast(`Saved preset: #${saved.id}`);
+  } catch (err) {
+    toast(err.message, true);
+  }
+});
+
+on("btn-save-new-run-preset", "click", async () => {
+  try {
+    const saved = await saveRunArgPreset(true);
+    setValueIfPresent("run-preset-name", saved.name || "");
+    await refreshRunArgPresets();
+    setValueIfPresent("run-preset-id", saved.id);
+    updateRunControlsState();
+    toast(`Saved new preset: #${saved.id}`);
   } catch (err) {
     toast(err.message, true);
   }
@@ -1064,4 +1078,23 @@ if (isDedicatedEditorPage) {
 }
 document.querySelectorAll(".tab").forEach((tab) => {
   tab.addEventListener("click", () => setActiveTab(tab.getAttribute("data-tab")));
+});
+
+// Floating Editor Assistant logic
+on("btn-toggle-assistant", "click", () => {
+  const win = $("floating-assistant");
+  if (win) {
+    if (win.style.display === "none") {
+      win.style.display = "flex";
+      const q = $("editor-assistant-question");
+      if (q) q.focus();
+    } else {
+      win.style.display = "none";
+    }
+  }
+});
+
+on("btn-close-assistant", "click", () => {
+  const win = $("floating-assistant");
+  if (win) win.style.display = "none";
 });

@@ -23,12 +23,15 @@ class TroubleshootAIService:
             "html_snippet": html_snippet or "",
         }
         instructions = (
-            "You are an assistant helping users edit browser automation workflows. "
-            "Give practical, concise guidance for step configuration and selectors. "
-            "When relevant, suggest exact JSON snippets for steps. "
-            "If asked about click_by_role, provide recommended role/name/scope_selector/exact/nth values. "
-            "If HTML snippet is provided, derive selectors/role-targeting from it. "
-            "Return plain text with short sections: Recommendation, Why, Example Step JSON."
+            "You are an expert Playwright automation engineer helping users build and edit workflow JSON definitions. "
+            "Your goal is to provide precise, highly resilient selectors and practical step configurations. "
+            "Always prioritize Playwright's best practices (e.g., role/text selectors over fragile CSS, unless IDs are explicitly unique). "
+            "If an HTML snippet is provided, analyze it carefully for tricky elements like duplicate IDs, hidden inputs, or Select2 dropdowns, and recommend the exact locator strategy. "
+            "When suggesting JSON snippets, ensure they are 100% syntactically valid and use the correct property names (e.g., 'selector', 'index', 'value'). "
+            "Return a clear, concise response structured as follows:\n"
+            "1. **Recommendation:** Direct answer to the question.\n"
+            "2. **Why:** Brief technical rationale.\n"
+            "3. **Example Step JSON:** A complete, copy-pasteable JSON block for the step."
         )
         return (
             f"{instructions}\n\n"
@@ -62,16 +65,18 @@ class TroubleshootAIService:
         }
 
         instructions = (
-            "You are troubleshooting a Playwright workflow run. "
-            "Analyze the failure and return ONLY valid JSON with this exact shape: "
-            "{"
-            "\"root_cause\": string, "
-            "\"fixes\": [string], "
-            "\"fallback_selectors\": [string], "
-            "\"corrected_steps\": [object], "
-            "\"verification_checklist\": [string]"
-            "}. "
-            "Do not include markdown code fences."
+            "You are an expert Playwright automation engineer troubleshooting a failed workflow run. "
+            "Carefully analyze the provided error_summary and step logs to determine exactly why the step failed. "
+            "Look out for common issues such as: strict mode violations, hidden elements (like Select2 dropdowns), timeout due to slow AJAX, or duplicate IDs. "
+            "Return ONLY valid JSON with this exact shape:\n"
+            "{\n"
+            "  \"root_cause\": \"Detailed technical explanation of what caused the failure.\",\n"
+            "  \"fixes\": [\"Actionable step 1\", \"Actionable step 2\"],\n"
+            "  \"fallback_selectors\": [\"More robust CSS or role-based Playwright selector 1\", \"Selector 2\"],\n"
+            "  \"corrected_steps\": [{\"type\": \"...\", \"selector\": \"...\"}],\n"
+            "  \"verification_checklist\": [\"What the user should manually check in the DOM or UI\"]\n"
+            "}\n"
+            "Do NOT wrap the response in markdown code fences (no ```json ... ```). Return raw JSON only."
         )
 
         if extra_prompt:

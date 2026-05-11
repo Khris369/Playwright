@@ -98,6 +98,14 @@ def _wait_for_element(args: dict[str, Any], state: dict[str, Any]) -> StepResult
     return StepResult(log=f"Waited for element {selector} (timeout {timeout_ms}ms)")
 
 
+def _wait_timeout(args: dict[str, Any], state: dict[str, Any]) -> StepResult:
+    timeout_ms = int(args.get("timeout_ms", 1000))
+    page = _page(state)
+    if page is not None:
+        page.wait_for_timeout(timeout_ms)
+    return StepResult(log=f"Waited for {timeout_ms}ms")
+
+
 def _assert_url_not_equal(args: dict[str, Any], state: dict[str, Any]) -> StepResult:
     expected_not = str(args["url"])
     page = _page(state)
@@ -179,6 +187,7 @@ STEP_HANDLERS: dict[str, Callable[[dict[str, Any], dict[str, Any]], StepResult]]
     "click_by_role": _click_by_role,
     "select_option": _select_option,
     "wait_for_element": _wait_for_element,
+    "wait_timeout": _wait_timeout,
     "assert_url_not_equal": _assert_url_not_equal,
     "assert_text_visible": _assert_text_visible,
     "run_custom_action": _run_custom_action,

@@ -96,53 +96,90 @@
 
     <section class="tab-panel" data-panel="runs">
       <div class="panel-grid two-col">
-        <section class="card">
-          <h2>Trigger Run</h2>
-          <p class="hint">Choose a workflow, choose a version, generate inputs, then run.</p>
-          <div class="grid2">
-            <select id="run-workflow-id">
-              <option value="">Select workflow...</option>
-            </select>
-            <select id="run-version-id">
-              <option value="">Select version...</option>
-            </select>
+        <!-- LEFT COLUMN: Configuration & Execution -->
+        <section class="card premium-card">
+          <h2><span class="icon">⚙️</span> Configuration</h2>
+          <p class="hint">Select the workflow and version you want to execute.</p>
+          <div class="grid2" style="margin-bottom: 16px;">
+            <div class="input-group">
+              <label class="field-label">Workflow</label>
+              <select id="run-workflow-id">
+                <option value="">Select workflow...</option>
+              </select>
+            </div>
+            <div class="input-group">
+              <label class="field-label">Version</label>
+              <select id="run-version-id">
+                <option value="">Select version...</option>
+              </select>
+            </div>
           </div>
-          <div class="grid2">
-            <input id="run-preset-name" placeholder="Preset name (e.g. Digi UAT)">
-            <select id="run-preset-id">
-              <option value="">Select saved preset...</option>
-            </select>
+
+          <div class="preset-box">
+            <h3 style="margin-top:0;">Presets</h3>
+            <div class="grid2">
+              <input id="run-preset-name" placeholder="Preset name (e.g. Digi UAT)">
+              <select id="run-preset-id">
+                <option value="">Select saved preset...</option>
+              </select>
+            </div>
+            <div class="preset-actions grid4">
+              <button id="btn-save-run-preset" class="btn-secondary btn-sm" type="button">Save</button>
+              <button id="btn-save-new-run-preset" class="btn-secondary btn-sm" type="button">Save As New</button>
+              <button id="btn-load-run-preset" class="btn-secondary btn-sm" type="button">Load</button>
+              <button id="btn-delete-run-preset" class="btn-danger btn-sm" type="button">Delete</button>
+            </div>
           </div>
-          <div class="grid3">
-            <button id="btn-save-run-preset" type="button">Save Preset</button>
-            <button id="btn-load-run-preset" type="button">Load Preset</button>
-            <button id="btn-delete-run-preset" type="button">Delete Preset</button>
+
+          <div class="input-group" style="margin-top: 16px;">
+            <div style="display:flex; justify-content:space-between; align-items:flex-end;">
+              <label class="field-label">Input Variables (JSON)</label>
+              <button id="btn-generate-run-inputs" class="btn-text btn-sm" type="button">Generate Template</button>
+            </div>
+            <textarea id="run-inputs" class="code-font" rows="8" placeholder='{"base_url":"https://example.com"}'></textarea>
           </div>
-          <button id="btn-generate-run-inputs" type="button">Generate Inputs Template</button>
-          <textarea id="run-inputs" rows="8" placeholder='{"base_url":"https://example.com"}'></textarea>
-          <button id="btn-trigger-run">Trigger Run</button>
-          <div id="troubleshoot-loading" class="hint" style="display:none;">Analyzing run with ChatGPT... please wait.</div>
-          <div id="run-created" class="mono"></div>
-          <h3>Troubleshooting Analysis</h3>
-          <div id="troubleshoot-structured" class="structured-result">
-            <div class="muted">No analysis yet.</div>
-          </div>
+          
+          <button id="btn-trigger-run" class="btn-primary btn-large btn-glow" style="margin-top: 16px;">🚀 Trigger Run</button>
+          <div id="run-created" class="mono mt-2" style="display: none;"></div>
         </section>
 
-        <section class="card">
-          <h2>Run Monitor</h2>
-          <div class="grid2">
-            <input id="monitor-run-id" placeholder="Run ID (int)">
-            <button id="btn-monitor-run">Load Run</button>
+        <!-- RIGHT COLUMN: Monitoring & Analysis -->
+        <section class="card premium-card">
+          <h2><span class="icon">📊</span> Run Monitor</h2>
+          <div class="grid2" style="margin-bottom: 16px;">
+            <div class="input-group">
+              <label class="field-label">Run ID</label>
+              <input id="monitor-run-id" placeholder="Run ID (int)">
+            </div>
+            <div class="input-group" style="justify-content: flex-end; display: flex; align-items: flex-end;">
+              <button id="btn-monitor-run" class="btn-secondary">Load Run</button>
+            </div>
           </div>
-          <div class="grid2">
-            <input id="troubleshoot-model" placeholder="Model (default from server)">
-            <button id="btn-troubleshoot-run" type="button">Troubleshoot with ChatGPT</button>
+
+          <div class="log-section">
+            <h3 class="section-title">Run Details</h3>
+            <pre id="run-details" class="json modern-json"></pre>
           </div>
-          <textarea id="troubleshoot-extra-prompt" rows="3" placeholder="Optional: add context for troubleshooting"></textarea>
-          <pre id="run-details" class="json"></pre>
-          <h3>Step Logs</h3>
-          <pre id="step-details" class="json"></pre>
+
+          <div class="log-section">
+            <h3 class="section-title">Step Logs</h3>
+            <pre id="step-details" class="json modern-json"></pre>
+          </div>
+
+          <div class="ai-troubleshoot-box" style="margin-top: 20px;">
+            <h3><span class="icon">🤖</span> AI Troubleshooting Analysis</h3>
+            <p class="hint mb-2">Analyze failed steps automatically with ChatGPT.</p>
+            <div class="grid2">
+              <input id="troubleshoot-model" placeholder="Model (default from server)">
+              <button id="btn-troubleshoot-run" class="btn-accent" type="button">Analyze with AI</button>
+            </div>
+            <textarea id="troubleshoot-extra-prompt" rows="2" placeholder="Optional: add context for troubleshooting (e.g. 'Why did the login timeout?')" style="margin-top:8px;"></textarea>
+            
+            <div id="troubleshoot-loading" class="hint" style="display:none; margin-top:8px;">Analyzing run with ChatGPT... please wait.</div>
+            <div id="troubleshoot-structured" class="structured-result modern-structured mt-2">
+              <div class="muted">No analysis yet.</div>
+            </div>
+          </div>
         </section>
       </div>
     </section>

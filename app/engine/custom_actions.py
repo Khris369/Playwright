@@ -27,21 +27,48 @@ def _select_scenario(page: Any, scenario_name: str) -> None:
 
 
 def _get_new_ticket_scope(page: Any) -> tuple[Any, str]:
-    headers = page.locator("[id^='card-header-action-']")
+    # We must explicitly wait for a newly created ticket (which has a purely numeric suffix, no hyphens)
+    # This prevents race conditions if the user used a standard 'click' step to create the ticket
+    # instead of the dedicated 'ticket_create_new_ticket' step.
+    page.wait_for_function("""
+        () => {
+            const headers = Array.from(document.querySelectorAll("[id^='card-header-action-']"))
+                .filter(e => e.querySelector("[id^='TicketTitle_']"));
+            return headers.some(e => {
+                const suffix = e.id.replace('card-header-action-', '');
+                return /^\\d+$/.test(suffix);
+            });
+        }
+    """, timeout=30000)
+
+    # We use :has([id^='TicketTitle_']) to completely ignore non-ticket panels 
+    # like "Update Caller Information" which also share the card-header-action- ID prefix.
+    headers = page.locator("[id^='card-header-action-']:has([id^='TicketTitle_'])")
     headers.first.wait_for(state="attached", timeout=30000)
     header_ids = [
         h for h in headers.evaluate_all("elements => elements.map(element => element.id)") if h
     ]
+    
+    # Strictly filter for purely numeric suffixes (new tickets never have hyphens)
     new_ticket_header_ids = [
         hid
         for hid in header_ids
-        if "-" not in hid.replace("card-header-action-", "")
+        if hid.replace("card-header-action-", "").isdigit()
     ]
-    new_header_id = sorted(new_ticket_header_ids or header_ids)[-1]
+    
+    if new_ticket_header_ids:
+        # evaluate_all returns elements in DOM order. Newest tickets are appended to the end.
+        # We take the last one. (We avoid int() sorting because timestamps can drop leading zeros and mess up string length).
+        new_header_id = new_ticket_header_ids[-1]
+    else:
+        # Fallback just in case
+        new_header_id = header_ids[-1]
+        
     ticket_suffix = new_header_id.replace("card-header-action-", "")
-    scope = page.locator(f"#{new_header_id}").locator(
-        "xpath=ancestor::*[.//button[normalize-space()='Submit']][1]"
-    )
+    
+    # The entire ticket lives inside a wrapper div with ID TicketID_{suffix}
+    scope = page.locator(f"#TicketID_{ticket_suffix}")
+    
     return scope, ticket_suffix
 
 
@@ -80,6 +107,7 @@ def _fill_by_label(scope: Any, label: str, value: str) -> None:
 def _fill_field(scope: Any, field: dict[str, Any]) -> None:
     field_type = str(field.get("type", "text")).lower()
     value = field.get("value", "")
+    index = field.get("index")
     selector = field.get("selector")
     label = field.get("label", "")
     if selector:
@@ -97,10 +125,15 @@ def _fill_field(scope: Any, field: dict[str, Any]) -> None:
             return
 
     if field_type in {"dropdown", "select2"}:
+        if index is not None:
+            locator.select_option(index=int(index), timeout=15000, force=True)
+            return
+
         try:
-            locator.select_option(label=str(value))
+            # We use force=True because many CRMs use Select2 or Chosen, which hide the native <select> element.
+            locator.select_option(label=str(value), timeout=15000, force=True)
         except Exception:
-            locator.select_option(value=str(value))
+            locator.select_option(value=str(value), timeout=15000, force=True)
         return
     locator.wait_for(state="visible")
     locator.fill(str(value))
@@ -115,8 +148,27 @@ def _action_select_ticket_scenario(args: dict[str, Any], page: Any) -> str:
 
 
 def _action_create_new_ticket(_: dict[str, Any], page: Any) -> str:
+    # Get only actual ticket headers
+    old_ids = page.locator("[id^='card-header-action-']:has([id^='TicketTitle_'])").evaluate_all(
+        "elements => elements.map(e => e.id)"
+    )
+    
     page.get_by_role("button", name="Create New Ticket").click()
-    page.wait_for_timeout(1500)
+    
+    # Wait until an entirely NEW and strictly NUMERIC actual ticket ID appears
+    page.wait_for_function("""
+        (oldIds) => {
+            const currentIds = Array.from(document.querySelectorAll("[id^='card-header-action-']"))
+                .filter(e => e.querySelector("[id^='TicketTitle_']"))
+                .map(e => e.id);
+            return currentIds.some(id => {
+                const suffix = id.replace('card-header-action-', '');
+                return !oldIds.includes(id) && /^\\d+$/.test(suffix);
+            });
+        }
+    """, arg=old_ids, timeout=30000)
+    
+    page.wait_for_timeout(1000)
     return "Clicked Create New Ticket"
 
 
@@ -132,6 +184,7 @@ def _action_fill_ticket_fields_from_scenario(
         )
 
     scope, ticket_suffix = _get_new_ticket_scope(page)
+
     fields = _load_ticket_fields(ticket_data_path, scenario_name, brand)
     for field in fields:
         scoped = dict(field)
@@ -155,6 +208,7 @@ def _action_fill_ticket_fields(
         raise RuntimeError("ticket_fill_fields requires non-empty fields list")
 
     scope, ticket_suffix = _get_new_ticket_scope(page)
+
     for field in fields:
         if not isinstance(field, dict):
             raise RuntimeError("ticket_fill_fields fields must be objects")

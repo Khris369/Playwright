@@ -26,19 +26,19 @@
     "fields": [
       {
         "label": "Reason/Cause",
-        "selector": "select#problemCause_3_{ticket_suffix}",
+        "selector": "select[name='ProblemCause']",
         "type": "dropdown",
         "value": "Enquiry"
       },
       {
         "label": "Resolution",
-        "selector": "select#reso_3_{ticket_suffix}",
+        "selector": "select[name='Resolution']",
         "type": "dropdown",
         "value": "Information Provided"
       },
       {
         "label": "Tag",
-        "selector": "select#promo_{ticket_suffix}",
+        "selector": "select[name='Promo']",
         "type": "dropdown",
         "value": "CelcomDigi ONE plans"
       },
@@ -60,7 +60,7 @@
     "fields": [
       {
         "label": "Charges Type",
-        "selector": "select#chargesType_3_{ticket_suffix}",
+        "selector": "select[name='chargesType']",
         "type": "dropdown",
         "value": "Roaming"
       }
