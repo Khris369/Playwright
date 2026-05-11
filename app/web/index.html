@@ -121,7 +121,12 @@
           <button id="btn-generate-run-inputs" type="button">Generate Inputs Template</button>
           <textarea id="run-inputs" rows="8" placeholder='{"base_url":"https://example.com"}'></textarea>
           <button id="btn-trigger-run">Trigger Run</button>
+          <div id="troubleshoot-loading" class="hint" style="display:none;">Analyzing run with ChatGPT... please wait.</div>
           <div id="run-created" class="mono"></div>
+          <h3>Troubleshooting Analysis</h3>
+          <div id="troubleshoot-structured" class="structured-result">
+            <div class="muted">No analysis yet.</div>
+          </div>
         </section>
 
         <section class="card">
@@ -130,6 +135,11 @@
             <input id="monitor-run-id" placeholder="Run ID (int)">
             <button id="btn-monitor-run">Load Run</button>
           </div>
+          <div class="grid2">
+            <input id="troubleshoot-model" placeholder="Model (default from server)">
+            <button id="btn-troubleshoot-run" type="button">Troubleshoot with ChatGPT</button>
+          </div>
+          <textarea id="troubleshoot-extra-prompt" rows="3" placeholder="Optional: add context for troubleshooting"></textarea>
           <pre id="run-details" class="json"></pre>
           <h3>Step Logs</h3>
           <pre id="step-details" class="json"></pre>

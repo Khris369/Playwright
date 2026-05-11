@@ -65,6 +65,19 @@
         <button id="btn-create-version">Create New Version</button>
       </div>
     </section>
+
+    <section class="card">
+      <h2>Editor Assistant</h2>
+      <p class="hint">Ask questions about your current workflow. You can paste HTML and get selector/step suggestions.</p>
+      <textarea id="editor-assistant-question" rows="3" placeholder="Example: I'm using click_by_role for a confirm modal. What args should I use?"></textarea>
+      <textarea id="editor-assistant-html" rows="6" placeholder="Optional: paste relevant HTML snippet"></textarea>
+      <div class="grid2">
+        <input id="editor-assistant-model" placeholder="Model (optional)">
+        <button id="btn-editor-assistant-ask" type="button">Ask Assistant</button>
+      </div>
+      <div id="editor-assistant-loading" class="hint" style="display:none;">Getting suggestion from assistant...</div>
+      <pre id="editor-assistant-answer" class="json"></pre>
+    </section>
   </main>
 
   <div id="toast"></div>

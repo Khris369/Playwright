@@ -436,6 +436,40 @@ function toast(message, isError = false) {
   setTimeout(() => (el.className = ""), 2400);
 }
 
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function renderTroubleshootStructured(result) {
+  const container = $("troubleshoot-structured");
+  if (!container) {
+    return;
+  }
+  const data = result?.analysis_structured || {};
+  const fixes = Array.isArray(data.fixes) ? data.fixes : [];
+  const fallbacks = Array.isArray(data.fallback_selectors) ? data.fallback_selectors : [];
+  const checklist = Array.isArray(data.verification_checklist) ? data.verification_checklist : [];
+  const correctedSteps = Array.isArray(data.corrected_steps) ? data.corrected_steps : [];
+
+  container.innerHTML = `
+    <h4>Root Cause</h4>
+    <div>${escapeHtml(data.root_cause || "No root cause provided")}</div>
+    <h4>Fix Suggestions</h4>
+    <ul>${fixes.map((item) => `<li>${escapeHtml(item)}</li>`).join("") || "<li>No suggestions provided</li>"}</ul>
+    <h4>Fallback Selectors</h4>
+    <ul>${fallbacks.map((item) => `<li>${escapeHtml(item)}</li>`).join("") || "<li>No fallback selectors provided</li>"}</ul>
+    <h4>Corrected Step JSON</h4>
+    <pre>${escapeHtml(JSON.stringify(correctedSteps, null, 2))}</pre>
+    <h4>Verification Checklist</h4>
+    <ul>${checklist.map((item) => `<li>${escapeHtml(item)}</li>`).join("") || "<li>No checklist provided</li>"}</ul>
+  `;
+}
+
 async function api(path, options = {}) {
   const res = await fetch(path, {
     headers: { "Content-Type": "application/json", ...(options.headers || {}) },
@@ -908,6 +942,88 @@ on("btn-monitor-run", "click", async () => {
     toast(`Loaded run #${runId}`);
   } catch (err) {
     toast(err.message, true);
+  }
+});
+
+on("btn-troubleshoot-run", "click", async () => {
+  const loadingEl = $("troubleshoot-loading");
+  const troubleshootBtn = $("btn-troubleshoot-run");
+  try {
+    const runId = Number(($("monitor-run-id") || {}).value);
+    if (!runId) {
+      throw new Error("Enter or load a Run ID first");
+    }
+    if (loadingEl) {
+      loadingEl.style.display = "block";
+    }
+    if (troubleshootBtn) {
+      troubleshootBtn.disabled = true;
+    }
+    const payload = {
+      model: String(($("troubleshoot-model") || {}).value || "").trim() || null,
+      temperature: 0.2,
+      extra_prompt: String(($("troubleshoot-extra-prompt") || {}).value || "").trim() || null,
+    };
+    const result = await api(`/workflow-runs/${runId}/troubleshoot`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    renderTroubleshootStructured(result);
+    toast("Troubleshooting analysis generated");
+  } catch (err) {
+    toast(err.message, true);
+  } finally {
+    if (loadingEl) {
+      loadingEl.style.display = "none";
+    }
+    if (troubleshootBtn) {
+      troubleshootBtn.disabled = false;
+    }
+  }
+});
+
+on("btn-editor-assistant-ask", "click", async () => {
+  const loadingEl = $("editor-assistant-loading");
+  const askBtn = $("btn-editor-assistant-ask");
+  try {
+    const question = String(($("editor-assistant-question") || {}).value || "").trim();
+    if (!question) {
+      throw new Error("Please enter a question");
+    }
+    const payload = {
+      question,
+      html_snippet: String(($("editor-assistant-html") || {}).value || "").trim() || null,
+      workflow_id: Number(($("selected-workflow-id") || {}).value) || null,
+      workflow_version_id: Number(($("ver-current-version-id") || {}).value) || null,
+      current_definition_json: $("ver-definition")
+        ? JSON.parse($("ver-definition").value || "{}")
+        : null,
+      model: String(($("editor-assistant-model") || {}).value || "").trim() || null,
+      temperature: 0.2,
+    };
+    if (loadingEl) {
+      loadingEl.style.display = "block";
+    }
+    if (askBtn) {
+      askBtn.disabled = true;
+    }
+    const result = await api("/editor-assistant", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    if ($("editor-assistant-answer")) {
+      $("editor-assistant-answer").textContent = result.answer || "";
+    }
+    toast("Assistant response ready");
+  } catch (err) {
+    toast(err.message, true);
+  } finally {
+    if (loadingEl) {
+      loadingEl.style.display = "none";
+    }
+    if (askBtn) {
+      askBtn.disabled = false;
+    }
   }
 });
 

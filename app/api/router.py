@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
+from app.api.routes.editor_assistant import router as editor_assistant_router
 from app.api.routes.health import router as health_router
 from app.api.routes.run_arg_presets import router as run_arg_presets_router
 from app.api.routes.step_types import router as step_types_router
@@ -10,6 +11,7 @@ from app.api.routes.workflow_runs import router as workflow_runs_router
 from app.api.routes.workflows import router as workflows_router
 
 api_router = APIRouter()
+api_router.include_router(editor_assistant_router)
 api_router.include_router(health_router)
 api_router.include_router(run_arg_presets_router)
 api_router.include_router(step_types_router)

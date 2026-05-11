@@ -276,6 +276,39 @@ button:disabled {
   max-height: 40rem;
   overflow: auto;
 }
+#step-details {
+  max-height: 40rem;
+  overflow: auto;
+}
+#run-inputs{
+    min-height: 20rem;
+    overflow: auto;
+}
+.structured-result {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fbff;
+  padding: 10px;
+  max-height: 40rem;
+  overflow: auto;
+  font-size: 13px;
+}
+.structured-result h4 {
+  margin: 0 0 6px;
+  font-size: 14px;
+}
+.structured-result ul {
+  margin: 0 0 10px 18px;
+  padding: 0;
+}
+.structured-result pre {
+  margin: 0 0 10px;
+  background: #0f172a;
+  color: #d6e3ff;
+  border-radius: 8px;
+  padding: 8px;
+  overflow: auto;
+}
 #toast {
   position: fixed;
   right: 14px;
