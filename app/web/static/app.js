@@ -12,6 +12,36 @@ const setValueIfPresent = (id, value) => {
   }
 };
 
+function estimateRowsFromContent(value, minRows = 3, maxRows = 24) {
+  const text = String(value || "");
+  const lines = text.split("\n");
+  const wrappedRows = lines.reduce((sum, line) => {
+    const len = Math.max(1, line.length);
+    return sum + Math.ceil(len / 80);
+  }, 0);
+  return Math.max(minRows, Math.min(maxRows, wrappedRows));
+}
+
+function autoResizeTextarea(el, { minRows = 3, maxRows = 24 } = {}) {
+  if (!el) {
+    return;
+  }
+  el.rows = estimateRowsFromContent(el.value, minRows, maxRows);
+  el.style.height = "auto";
+  const lineHeight = parseFloat(window.getComputedStyle(el).lineHeight) || 22;
+  const maxHeightPx = Math.ceil(lineHeight * maxRows) + 24;
+  el.style.height = `${Math.min(el.scrollHeight, maxHeightPx)}px`;
+}
+
+function autoResizeById(id, options) {
+  const el = $(id);
+  if (!el) {
+    return;
+  }
+  autoResizeTextarea(el, options);
+  el.addEventListener("input", () => autoResizeTextarea(el, options));
+}
+
 const defaultDefinition = {
   steps: [
     { type: "goto_url", args: { url: "{{inputs.base_url}}" } },
@@ -57,8 +87,52 @@ function getDefaultArgsForStepType(stepType) {
   return {};
 }
 
+function toTitleCaseFromSnake(value) {
+  return String(value || "")
+    .split("_")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function summarizeStep(step) {
+  const stepType = String(step?.type || "");
+  const args = step?.args && typeof step.args === "object" ? step.args : {};
+  const selector = args.selector || args.scope_selector || args.target || "";
+  const value = args.value || args.text || args.url || args.action || "";
+
+  if (stepType === "fill_input") {
+    return {
+      sentence: selector && value ? `Sets ${selector} to ${value}` : "Fills an input field",
+      target: selector || "-",
+      value: value || "-",
+    };
+  }
+  if (stepType === "click") {
+    return {
+      sentence: selector ? `Clicks ${selector}` : "Performs a click action",
+      target: selector || "-",
+      value: "-",
+    };
+  }
+  if (stepType === "goto_url") {
+    return {
+      sentence: value ? `Navigates to ${value}` : "Navigates to a URL",
+      target: "-",
+      value: value || "-",
+    };
+  }
+  return {
+    sentence: `${toTitleCaseFromSnake(stepType)} step`,
+    target: selector || "-",
+    value: value || "-",
+  };
+}
+
 let editorSteps = [];
 let draggedStepIndex = null;
+let dropPlaceholderIndex = null;
+let currentWorkflowVersions = [];
 const isDedicatedEditorPage = window.location.pathname === "/ui/editor";
 
 function editorUrlFor(workflowId) {
@@ -147,6 +221,7 @@ function syncJsonFromSteps() {
     args: step.args || {},
   }));
   $("ver-definition").value = JSON.stringify(definition, null, 2);
+  autoResizeTextarea($("ver-definition"), { minRows: 12, maxRows: 70 });
 }
 
 function syncStepsFromJson() {
@@ -156,6 +231,77 @@ function syncStepsFromJson() {
     args: step.args && typeof step.args === "object" ? step.args : {},
   }));
   renderStepBuilder();
+}
+
+function updateWorkflowInfoPanel(latestVersion, workflowId) {
+  const versionEl = $("wf-info-version-id");
+  const workflowEl = $("wf-info-workflow-id");
+  const revisionEl = $("wf-info-revision");
+  if (versionEl) {
+    versionEl.textContent = latestVersion?.id ? String(latestVersion.id) : "-";
+  }
+  if (workflowEl) {
+    workflowEl.textContent = workflowId ? String(workflowId) : "-";
+  }
+  if (revisionEl) {
+    revisionEl.textContent = latestVersion?.version_number
+      ? String(latestVersion.version_number)
+      : "-";
+  }
+}
+
+function updateVersionPrimaryActions() {
+  const saveBtn = $("btn-save-version");
+  if (!saveBtn) {
+    return;
+  }
+  saveBtn.style.display = "";
+}
+
+function populateRevisionDropdown(versions, selectedVersionId = null) {
+  const select = $("ver-revision-id");
+  if (!select) {
+    return;
+  }
+  const rows = Array.isArray(versions) ? versions : [];
+  if (!rows.length) {
+    select.innerHTML = `<option value="">No revisions found</option>`;
+    return;
+  }
+  select.innerHTML = rows
+    .map(
+      (v) =>
+        `<option value="${v.id}">Revision ${v.version_number} (${v.is_published ? "published" : "draft"})</option>`
+    )
+    .join("");
+  if (selectedVersionId) {
+    select.value = String(selectedVersionId);
+  } else {
+    select.value = String(rows[0].id);
+  }
+}
+
+function loadVersionIntoEditor(version, workflowId) {
+  if (!version) {
+    return;
+  }
+  setValueIfPresent("ver-current-version-id", version.id);
+  setValueIfPresent("ver-workflow-id", workflowId);
+  if ($("ver-revision-id")) {
+    setValueIfPresent("ver-revision-id", version.id);
+  }
+  if ($("ver-published")) {
+    $("ver-published").checked = Boolean(version.is_published);
+  }
+  if ($("ver-definition")) {
+    $("ver-definition").value = JSON.stringify(version.definition_json || defaultDefinition, null, 2);
+    autoResizeTextarea($("ver-definition"), { minRows: 12, maxRows: 70 });
+  }
+  updateWorkflowInfoPanel(version, workflowId);
+  updateVersionPrimaryActions();
+  if ($("step-builder")) {
+    syncStepsFromJson();
+  }
 }
 
 function renderStepBuilder() {
@@ -168,23 +314,52 @@ function renderStepBuilder() {
     return;
   }
   builder.innerHTML = editorSteps
-    .map((step, index) => `
+    .map((step, index) => {
+      const summary = summarizeStep(step);
+      return `
       <div class="step-card" data-step-index="${index}">
-        <div class="step-card-header">
-          <div class="step-card-title">Step ${index + 1}</div>
-          <div class="step-drag" draggable="true" data-drag-handle="true" data-step-index="${index}" title="Drag to reorder">::</div>
-        </div>
-        <div class="grid2">
-          <select data-field="type" data-step-index="${index}">
-            ${getStepTypeOptionsHtml(step.type)}
-          </select>
-          <button class="step-default" type="button" data-action="default-args" data-step-index="${index}">Default Args</button>
-        </div>
-        <button class="step-remove" type="button" data-action="remove" data-step-index="${index}">Remove</button>
-        <textarea data-field="args" data-step-index="${index}" spellcheck="false">${JSON.stringify(step.args || {}, null, 2)}</textarea>
+        <details class="step-collapse">
+          <summary class="step-collapse-summary">
+            <div class="step-summary-main">
+              <div class="step-card-title">Step ${index + 1} — ${escapeHtml(toTitleCaseFromSnake(step.type))}</div>
+              <div class="step-summary-row"><span class="step-summary-label">Target:</span> <span>${escapeHtml(summary.target)}</span></div>
+              <div class="step-summary-row"><span class="step-summary-label">Value:</span> <span>${escapeHtml(summary.value)}</span></div>
+              <div class="step-summary-text">Summary: ${escapeHtml(summary.sentence)}</div>
+            </div>
+            <div class="step-card-controls">
+              <div class="step-menu-wrap">
+                <button class="step-secondary step-menu-trigger" type="button" data-action="open-menu" data-step-index="${index}" title="More actions">⋯</button>
+                <div class="step-menu" data-menu="${index}">
+                  <button class="step-menu-item" type="button" data-action="insert-above" data-step-index="${index}">Insert Above</button>
+                  <button class="step-menu-item" type="button" data-action="insert-below" data-step-index="${index}">Insert Below</button>
+                  <button class="step-menu-item" type="button" data-action="duplicate" data-step-index="${index}">Duplicate</button>
+                </div>
+              </div>
+              <div class="step-drag" draggable="true" data-drag-handle="true" data-step-index="${index}" title="Drag to reorder">::</div>
+            </div>
+          </summary>
+          <div class="step-collapse-body">
+            <div class="grid2">
+              <select data-field="type" data-step-index="${index}">
+                ${getStepTypeOptionsHtml(step.type)}
+              </select>
+              <button class="step-default" type="button" data-action="default-args" data-step-index="${index}">Default Args</button>
+            </div>
+            <div class="step-args-title">Arguments JSON</div>
+            <div class="step-actions">
+              <button class="step-remove" type="button" data-action="remove" data-step-index="${index}">Remove</button>
+            </div>
+            <textarea data-field="args" data-step-index="${index}" spellcheck="false">${JSON.stringify(step.args || {}, null, 2)}</textarea>
+          </div>
+        </details>
       </div>
-    `)
+    `;
+    })
     .join("");
+  const placeholder = document.createElement("div");
+  placeholder.className = "step-drop-placeholder";
+  placeholder.style.display = "none";
+  builder.appendChild(placeholder);
 
   builder.querySelectorAll("[data-action='remove']").forEach((el) => {
     el.addEventListener("click", () => {
@@ -194,6 +369,70 @@ function renderStepBuilder() {
       renderStepBuilder();
     });
   });
+
+  builder.querySelectorAll("[data-action='insert-above']").forEach((el) => {
+    el.addEventListener("click", () => {
+      const index = Number(el.getAttribute("data-step-index"));
+      const sourceType = editorSteps[index]?.type || "click";
+      editorSteps.splice(index, 0, {
+        type: sourceType,
+        args: getDefaultArgsForStepType(sourceType),
+      });
+      syncJsonFromSteps();
+      renderStepBuilder();
+    });
+  });
+
+  builder.querySelectorAll("[data-action='insert-below']").forEach((el) => {
+    el.addEventListener("click", () => {
+      const index = Number(el.getAttribute("data-step-index"));
+      const sourceType = editorSteps[index]?.type || "click";
+      editorSteps.splice(index + 1, 0, {
+        type: sourceType,
+        args: getDefaultArgsForStepType(sourceType),
+      });
+      syncJsonFromSteps();
+      renderStepBuilder();
+    });
+  });
+
+  builder.querySelectorAll("[data-action='duplicate']").forEach((el) => {
+    el.addEventListener("click", () => {
+      const index = Number(el.getAttribute("data-step-index"));
+      const currentStep = editorSteps[index];
+      if (!currentStep) {
+        return;
+      }
+      editorSteps.splice(index + 1, 0, JSON.parse(JSON.stringify(currentStep)));
+      syncJsonFromSteps();
+      renderStepBuilder();
+    });
+  });
+
+  builder.querySelectorAll("[data-action='open-menu']").forEach((el) => {
+    el.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const stepIndex = Number(el.getAttribute("data-step-index"));
+      const menu = builder.querySelector(`.step-menu[data-menu='${stepIndex}']`);
+      if (!menu) {
+        return;
+      }
+      builder.querySelectorAll(".step-menu").forEach((m) => m.classList.remove("is-open"));
+      menu.classList.toggle("is-open");
+    });
+  });
+
+  builder.querySelectorAll(".step-menu-item").forEach((el) => {
+    el.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+    });
+  });
+
+  builder.onclick = () => {
+    builder.querySelectorAll(".step-menu").forEach((m) => m.classList.remove("is-open"));
+  };
 
   builder.querySelectorAll("select[data-field='type']").forEach((el) => {
     el.addEventListener("change", () => {
@@ -218,6 +457,8 @@ function renderStepBuilder() {
   });
 
   builder.querySelectorAll("textarea[data-field='args']").forEach((el) => {
+    autoResizeTextarea(el, { minRows: 4, maxRows: 20 });
+    el.addEventListener("input", () => autoResizeTextarea(el, { minRows: 4, maxRows: 20 }));
     el.addEventListener("change", () => {
       const index = Number(el.getAttribute("data-step-index"));
       try {
@@ -237,35 +478,80 @@ function renderStepBuilder() {
     handle.addEventListener("dragstart", () => {
       const stepIndex = Number(handle.getAttribute("data-step-index"));
       draggedStepIndex = stepIndex;
+      dropPlaceholderIndex = stepIndex;
       const card = builder.querySelector(`.step-card[data-step-index='${stepIndex}']`);
       if (card) {
         card.classList.add("dragging");
       }
+      placeholder.style.display = "";
     });
     handle.addEventListener("dragend", () => {
       const stepIndex = Number(handle.getAttribute("data-step-index"));
       draggedStepIndex = null;
+      dropPlaceholderIndex = null;
       const card = builder.querySelector(`.step-card[data-step-index='${stepIndex}']`);
       if (card) {
         card.classList.remove("dragging");
       }
+      placeholder.style.display = "none";
     });
   });
 
   builder.querySelectorAll(".step-card").forEach((card) => {
     card.addEventListener("dragover", (event) => {
       event.preventDefault();
-    });
-    card.addEventListener("drop", () => {
-      const dropIndex = Number(card.getAttribute("data-step-index"));
-      if (draggedStepIndex === null || draggedStepIndex === dropIndex) {
+      if (draggedStepIndex === null) {
         return;
       }
+      const rect = card.getBoundingClientRect();
+      const cardIndex = Number(card.getAttribute("data-step-index"));
+      const insertBefore = event.clientY < rect.top + rect.height / 2;
+      dropPlaceholderIndex = insertBefore ? cardIndex : cardIndex + 1;
+
+      if (insertBefore) {
+        builder.insertBefore(placeholder, card);
+      } else {
+        builder.insertBefore(placeholder, card.nextSibling);
+      }
+      placeholder.style.display = "";
+    });
+    card.addEventListener("drop", () => {
+      if (draggedStepIndex === null || dropPlaceholderIndex === null) {
+        return;
+      }
+      let insertIndex = dropPlaceholderIndex;
       const [moved] = editorSteps.splice(draggedStepIndex, 1);
-      editorSteps.splice(dropIndex, 0, moved);
+      if (insertIndex > draggedStepIndex) {
+        insertIndex -= 1;
+      }
+      editorSteps.splice(insertIndex, 0, moved);
       syncJsonFromSteps();
       renderStepBuilder();
     });
+  });
+
+  builder.addEventListener("dragleave", (event) => {
+    if (!builder.contains(event.relatedTarget) && draggedStepIndex !== null) {
+      placeholder.style.display = "none";
+    }
+  });
+
+  builder.addEventListener("dragover", (event) => {
+    event.preventDefault();
+    if (draggedStepIndex === null) {
+      return;
+    }
+    const cards = [...builder.querySelectorAll(".step-card")];
+    if (!cards.length) {
+      return;
+    }
+    const lastCard = cards[cards.length - 1];
+    const rect = lastCard.getBoundingClientRect();
+    if (event.clientY > rect.bottom) {
+      dropPlaceholderIndex = cards.length;
+      builder.appendChild(placeholder);
+      placeholder.style.display = "";
+    }
   });
 }
 
@@ -401,6 +687,7 @@ async function loadRunArgPreset() {
     throw new Error("Preset not found");
   }
   $("run-inputs").value = JSON.stringify(preset.inputs_json || {}, null, 2);
+  autoResizeTextarea($("run-inputs"), { minRows: 8, maxRows: 36 });
   setValueIfPresent("run-preset-name", preset.name || "");
 }
 
@@ -428,6 +715,7 @@ async function generateRunInputsTemplate() {
     setNestedValue(generated, path, "");
   });
   $("run-inputs").value = JSON.stringify(generated, null, 2);
+  autoResizeTextarea($("run-inputs"), { minRows: 8, maxRows: 36 });
 }
 
 function toast(message, isError = false) {
@@ -527,7 +815,7 @@ function templateRow(tpl) {
 }
 
 async function refreshWorkflows() {
-  const items = await api("/workflows");
+  const items = await api("/workflows?active_only=true");
   const workflowListEl = $("workflow-list");
   if (workflowListEl) {
     workflowListEl.innerHTML = items.length ? items.map(workflowRow).join("") : "<div class='muted'>No workflows yet.</div>";
@@ -617,40 +905,43 @@ async function refreshTemplates() {
 }
 
 async function loadWorkflowDetails(workflowId) {
-  if (!$("selected-workflow-id") || !$("workflow-details") || !$("workflow-versions")) {
+  if (!$("selected-workflow-id") || !$("workflow-details")) {
     return;
   }
   const workflow = await api(`/workflows/${workflowId}`);
   const versions = await api(`/workflows/${workflowId}/versions`);
+  currentWorkflowVersions = versions;
   const latestVersion = versions.length ? versions[0] : null;
   $("selected-workflow-id").value = workflowId;
   setSelectedWorkflowListItem(workflowId);
   $("workflow-details").textContent = JSON.stringify(workflow, null, 2);
-  $("workflow-versions").textContent = JSON.stringify(versions, null, 2);
-  setValueIfPresent("ver-workflow-id", workflowId);
-  const editBtn = $("btn-edit-workflow");
-  if (editBtn) {
-    editBtn.href = editorUrlFor(workflowId);
-    editBtn.classList.remove("btn-link-disabled");
+  if ($("workflow-versions")) {
+    $("workflow-versions").textContent = JSON.stringify(versions, null, 2);
   }
+  setValueIfPresent("ver-workflow-id", workflowId);
   if (latestVersion) {
-    setValueIfPresent("ver-current-version-id", latestVersion.id);
+    populateRevisionDropdown(versions, latestVersion.id);
+    loadVersionIntoEditor(latestVersion, workflowId);
     if ($("run-version-id")) {
       $("run-version-id").value = latestVersion.id;
     }
-    if ($("ver-definition")) {
-      $("ver-definition").value = JSON.stringify(latestVersion.definition_json || defaultDefinition, null, 2);
-    }
-    setValueIfPresent("ver-number", Number(latestVersion.version_number || 0) + 1);
   } else {
+    populateRevisionDropdown([]);
     setValueIfPresent("ver-current-version-id", "");
     if ($("ver-definition")) {
       $("ver-definition").value = JSON.stringify(defaultDefinition, null, 2);
+      autoResizeTextarea($("ver-definition"), { minRows: 12, maxRows: 70 });
     }
-    setValueIfPresent("ver-number", 1);
-  }
-  if ($("step-builder")) {
-    syncStepsFromJson();
+    if ($("ver-revision-id")) {
+      setValueIfPresent("ver-revision-id", "");
+    }
+    if ($("ver-published")) {
+      $("ver-published").checked = true;
+    }
+    updateWorkflowInfoPanel(null, workflowId);
+    if ($("step-builder")) {
+      syncStepsFromJson();
+    }
   }
   updateCurrentWorkflowIndicator(workflow);
 }
@@ -666,14 +957,23 @@ on("btn-create-workflow", "click", async () => {
     toast(`Workflow created: #${created.id}`);
     setValueIfPresent("ver-workflow-id", created.id);
     setValueIfPresent("selected-workflow-id", created.id);
+    setValueIfPresent("editor-workflow-id", created.id);
     if ($("ver-definition")) {
       $("ver-definition").value = JSON.stringify(defaultDefinition, null, 2);
+      autoResizeTextarea($("ver-definition"), { minRows: 12, maxRows: 70 });
     }
-    setValueIfPresent("ver-number", 1);
+    setValueIfPresent("ver-current-version-id", "");
+    populateRevisionDropdown([]);
+    if ($("ver-revision-id")) {
+      setValueIfPresent("ver-revision-id", "");
+    }
+    updateVersionPrimaryActions();
     if ($("step-builder")) {
       syncStepsFromJson();
     }
     await refreshWorkflows();
+    setValueIfPresent("editor-workflow-id", created.id);
+    await loadWorkflowDetails(created.id);
   } catch (err) {
     toast(err.message, true);
   }
@@ -754,13 +1054,48 @@ on("btn-edit-workflow", "click", (event) => {
   window.location.href = editorUrlFor(workflowId);
 });
 
+on("btn-delete-workflow", "click", async () => {
+  try {
+    const workflowId = Number(($("editor-workflow-id") || {}).value);
+    if (!workflowId) {
+      throw new Error("Select a workflow first");
+    }
+    await api(`/workflows/${workflowId}`, { method: "DELETE" });
+    setValueIfPresent("editor-workflow-id", "");
+    setValueIfPresent("selected-workflow-id", "");
+    setValueIfPresent("ver-workflow-id", "");
+    setValueIfPresent("ver-current-version-id", "");
+    if ($("ver-revision-id")) {
+      setValueIfPresent("ver-revision-id", "");
+    }
+    currentWorkflowVersions = [];
+    populateRevisionDropdown([]);
+    updateWorkflowInfoPanel(null, null);
+    updateVersionPrimaryActions();
+    if ($("workflow-details")) {
+      $("workflow-details").textContent = "";
+    }
+    updateCurrentWorkflowIndicator(null);
+    await refreshWorkflows();
+    toast(`Workflow #${workflowId} set to inactive`);
+  } catch (err) {
+    toast(err.message, true);
+  }
+});
+
 on("btn-create-version", "click", async () => {
   try {
     const workflowId = Number($("ver-workflow-id").value);
+    const currentVersionId = Number(($("ver-current-version-id") || {}).value);
+    if (!workflowId || !currentVersionId) {
+      throw new Error("Load a workflow version first before creating the next version");
+    }
     syncJsonFromSteps();
     const definition = JSON.parse($("ver-definition").value);
+    const nextRevision =
+      Math.max(0, ...currentWorkflowVersions.map((v) => Number(v.version_number) || 0)) + 1;
     const payload = {
-      version_number: Number($("ver-number").value),
+      version_number: nextRevision,
       is_published: $("ver-published").checked,
       definition_json: definition,
     };
@@ -768,13 +1103,16 @@ on("btn-create-version", "click", async () => {
       method: "POST",
       body: JSON.stringify(payload),
     });
-    toast(`Version created: #${created.id}`);
-    setValueIfPresent("ver-current-version-id", created.id);
+    toast(`Created next version: #${created.id}`);
+    currentWorkflowVersions = [created, ...currentWorkflowVersions];
+    currentWorkflowVersions.sort(
+      (a, b) => Number(b.version_number || 0) - Number(a.version_number || 0)
+    );
+    populateRevisionDropdown(currentWorkflowVersions, created.id);
+    loadVersionIntoEditor(created, workflowId);
     if ($("run-version-id")) {
       $("run-version-id").value = created.id;
     }
-    await loadWorkflowDetails(workflowId);
-    setActiveTab("runs");
   } catch (err) {
     toast(err.message, true);
   }
@@ -797,10 +1135,38 @@ on("btn-save-version", "click", async () => {
       body: JSON.stringify(payload),
     });
     toast(`Saved current version: #${updated.id}`);
+    updateVersionPrimaryActions();
+    const idx = currentWorkflowVersions.findIndex((item) => Number(item.id) === Number(updated.id));
+    if (idx >= 0) {
+      currentWorkflowVersions[idx] = { ...currentWorkflowVersions[idx], ...updated };
+    }
+    loadVersionIntoEditor(updated, Number(($("ver-workflow-id") || {}).value) || null);
     const workflowId = Number(($("ver-workflow-id") || {}).value);
     if (workflowId) {
-      await loadWorkflowDetails(workflowId);
+      populateRevisionDropdown(currentWorkflowVersions, updated.id);
+      if ($("workflow-versions")) {
+        $("workflow-versions").textContent = JSON.stringify(currentWorkflowVersions, null, 2);
+      }
     }
+  } catch (err) {
+    toast(err.message, true);
+  }
+});
+
+on("ver-revision-id", "change", async () => {
+  try {
+    const versionId = Number(($("ver-revision-id") || {}).value);
+    const workflowId = Number(($("ver-workflow-id") || {}).value);
+    if (!versionId || !workflowId) {
+      return;
+    }
+    const local = currentWorkflowVersions.find((v) => Number(v.id) === versionId);
+    if (local) {
+      loadVersionIntoEditor(local, workflowId);
+      return;
+    }
+    const version = await api(`/workflows/versions/${versionId}`);
+    loadVersionIntoEditor(version, workflowId);
   } catch (err) {
     toast(err.message, true);
   }
@@ -1057,7 +1423,13 @@ if ($("step-type-select")) {
 if ($("step-builder")) {
   syncStepsFromJson();
 }
+autoResizeById("ver-definition", { minRows: 12, maxRows: 70 });
+autoResizeById("run-inputs", { minRows: 8, maxRows: 36 });
+autoResizeById("editor-assistant-question", { minRows: 3, maxRows: 12 });
+autoResizeById("editor-assistant-html", { minRows: 6, maxRows: 20 });
+autoResizeById("troubleshoot-extra-prompt", { minRows: 2, maxRows: 10 });
 updateRunControlsState();
+updateVersionPrimaryActions();
 if (isDedicatedEditorPage) {
   const params = new URLSearchParams(window.location.search);
   const workflowId = Number(params.get("workflow_id"));
@@ -1097,4 +1469,33 @@ on("btn-toggle-assistant", "click", () => {
 on("btn-close-assistant", "click", () => {
   const win = $("floating-assistant");
   if (win) win.style.display = "none";
+});
+
+function openJsonSidebar() {
+  document.body.classList.add("json-sidebar-open");
+}
+
+function closeJsonSidebar() {
+  document.body.classList.remove("json-sidebar-open");
+}
+
+on("btn-open-json-sidebar", "click", () => {
+  if ($("ver-definition")) {
+    openJsonSidebar();
+    autoResizeTextarea($("ver-definition"), { minRows: 12, maxRows: 70 });
+  }
+});
+
+on("btn-close-json-sidebar", "click", () => {
+  closeJsonSidebar();
+});
+
+on("json-sidebar-overlay", "click", () => {
+  closeJsonSidebar();
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") {
+    closeJsonSidebar();
+  }
 });

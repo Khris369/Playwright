@@ -20,50 +20,103 @@
 
   <main class="tab-content">
     <section class="tab-panel is-active" data-panel="workflows">
-      <section class="card" style="margin-bottom: 14px;">
-        <h2>Quick Start</h2>
-        <p class="hint">1) Create or import a workflow. 2) Open it in the editor. 3) Run it from the Runs tab.</p>
-        <a id="btn-open-editor" class="btn-link btn-link" href="/ui/editor">Open Dedicated Editor</a>
+      <section class="card card-subtle" style="margin-bottom: 14px;">
+        <h2>Workflow Editor</h2>
+        <p class="hint">Create a workflow, select an active workflow, then edit and version it below.</p>
       </section>
 
-      <div class="panel-grid two-col">
-        <section class="card">
-          <h2>Create Workflow</h2>
-          <p class="hint">Creates a workflow record. Then add steps in the dedicated editor.</p>
-          <div class="grid2">
-            <input id="wf-name" placeholder="Workflow name">
-            <input id="wf-status" placeholder="Status (active)" value="active">
+      <section class="card card-subtle" style="margin-bottom: 14px;">
+        <details id="create-workflow-panel" class="create-workflow-panel">
+          <summary>+ Create New Workflow</summary>
+          <div class="create-workflow-body">
+            <div class="grid2">
+              <input id="wf-name" placeholder="Workflow name">
+              <input id="wf-status" value="active" placeholder="Status" readonly>
+            </div>
+            <textarea id="wf-description" rows="2" placeholder="Description"></textarea>
+            <button id="btn-create-workflow">Create Workflow</button>
           </div>
-          <textarea id="wf-description" rows="2" placeholder="Description"></textarea>
-          <button id="btn-create-workflow">Create Workflow</button>
-        </section>
+        </details>
+      </section>
 
-        <section class="card">
-          <h2>Workflow List</h2>
-          <button id="btn-refresh-workflows">Refresh</button>
-          <p class="hint">Click a workflow to load details and versions.</p>
-          <div id="workflow-list" class="list"></div>
-        </section>
-      </div>
-
-      <div class="panel-grid two-col">
-        <section class="card">
-          <h2>Selected Workflow (View)</h2>
-          <div class="grid2">
-            <input id="selected-workflow-id" placeholder="Workflow ID (int)">
-            <button id="btn-load-workflow">Load By ID</button>
+      <section class="card version-editor-card card-primary">
+        <div class="version-editor-sticky">
+          <div class="editor-header-sticky">
+            <div class="editor-title-row">
+              <h2>Edit Workflow</h2>
+              <button id="btn-save-version" type="button" class="btn-primary">Save Version</button>
+            </div>
+            <p class="hint">Latest version auto-loads. Modify steps below and create the next version.</p>
+            <div id="editor-current-workflow" class="current-workflow-indicator">
+              No workflow selected
+            </div>
+            <div class="grid3">
+              <select id="editor-workflow-id">
+                <option value="">Select active workflow...</option>
+              </select>
+              <div></div>
+              <button id="btn-delete-workflow" class="btn-danger" type="button">Delete Workflow</button>
+            </div>
+            <input id="selected-workflow-id" type="hidden">
+            <details class="preview-toggle">
+              <summary>Preview Workflow JSON</summary>
+              <pre id="workflow-details" class="json"></pre>
+            </details>
           </div>
-          <div>
-            <a id="btn-edit-workflow" class="btn-link btn-link-disabled" href="/ui/editor">Edit Workflow</a>
+          <div class="workflow-info-card">
+            <h3>Workflow Info</h3>
+            <div>Version ID: <strong id="wf-info-version-id">-</strong></div>
+            <div>Workflow ID: <strong id="wf-info-workflow-id">-</strong></div>
+            <div>Revision: <strong id="wf-info-revision">-</strong></div>
           </div>
-          <pre id="workflow-details" class="json"></pre>
-        </section>
-
-        <section class="card">
-          <h2>Versions</h2>
-          <pre id="workflow-versions" class="json"></pre>
-        </section>
-      </div>
+          <div class="grid3">
+            <input id="ver-workflow-id" type="hidden">
+            <input id="ver-current-version-id" type="hidden">
+            <div class="input-group">
+              <label class="field-label" for="ver-revision-id">Revision</label>
+              <select id="ver-revision-id">
+                <option value="">Select revision...</option>
+              </select>
+            </div>
+            <div class="input-group">
+              <label class="field-label" for="btn-create-version">Next Revision</label>
+              <button id="btn-create-version" type="button" class="btn-primary">Create Next Version</button>
+            </div>
+            <div class="input-group">
+              <label class="field-label">Visibility</label>
+              <label class="inline-check"><input id="ver-published" type="checkbox" checked> Published</label>
+            </div>
+          </div>
+          <div class="builder-toolbar">
+            <div class="builder-toolbar-row">
+              <div class="input-group">
+                <label class="field-label" for="step-type-select">Step Type</label>
+                <select id="step-type-select">
+                  <option value="">Loading step types...</option>
+                </select>
+              </div>
+              <button id="btn-add-step" type="button" class="btn-secondary">Add Step</button>
+            </div>
+            <div class="builder-toolbar-row builder-toolbar-row-secondary">
+              <button id="btn-refresh-workflows" type="button" class="btn-secondary">Refresh</button>
+              <button id="btn-sync-from-json" type="button" class="btn-secondary">Load From JSON</button>
+              <button id="btn-open-json-sidebar" type="button">JSON Preview</button>
+            </div>
+          </div>
+        </div>
+        <div class="editor-split">
+          <div id="step-builder" class="step-builder"></div>
+          <div class="json-sidebar-anchor"></div>
+        </div>
+      </section>
+      <div id="json-sidebar-overlay" class="json-sidebar-overlay"></div>
+      <aside id="json-sidebar" class="json-sidebar">
+        <div class="json-sidebar-header">
+          <h3>Definition JSON</h3>
+          <button id="btn-close-json-sidebar" type="button" class="close-btn">&times;</button>
+        </div>
+        <textarea id="ver-definition" rows="18"></textarea>
+      </aside>
 
     </section>
 
@@ -89,7 +142,10 @@
             <label><input id="tpl-published" type="checkbox" checked> Published</label>
           </div>
           <button id="btn-import-template">Import Template to Workflow</button>
-          <pre id="template-import-result" class="json"></pre>
+          <details class="preview-toggle">
+            <summary>Preview Import Result JSON</summary>
+            <pre id="template-import-result" class="json"></pre>
+          </details>
         </section>
       </div>
     </section>
@@ -158,12 +214,18 @@
 
           <div class="log-section">
             <h3 class="section-title">Run Details</h3>
-            <pre id="run-details" class="json modern-json"></pre>
+            <details class="preview-toggle">
+              <summary>Preview Run Details JSON</summary>
+              <pre id="run-details" class="json modern-json"></pre>
+            </details>
           </div>
 
           <div class="log-section">
             <h3 class="section-title">Step Logs</h3>
-            <pre id="step-details" class="json modern-json"></pre>
+            <details class="preview-toggle">
+              <summary>Preview Step Logs JSON</summary>
+              <pre id="step-details" class="json modern-json"></pre>
+            </details>
           </div>
 
           <div class="ai-troubleshoot-box" style="margin-top: 20px;">

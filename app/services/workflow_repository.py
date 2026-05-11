@@ -29,15 +29,18 @@ class WorkflowRepository:
             return cursor.fetchone()
 
     @staticmethod
-    def list_workflows() -> list[dict]:
+    def list_workflows(active_only: bool = False) -> list[dict]:
         with get_db_cursor() as (_, cursor):
-            cursor.execute(
-                """
+            query = """
                 SELECT id, name, description, status, created_at, updated_at
                 FROM workflows
-                ORDER BY created_at DESC
-                """
-            )
+            """
+            params: tuple = ()
+            if active_only:
+                query += " WHERE status = %s"
+                params = ("active",)
+            query += " ORDER BY created_at DESC"
+            cursor.execute(query, params)
             return list(cursor.fetchall())
 
     @staticmethod
@@ -164,3 +167,16 @@ class WorkflowRepository:
                 row["definition_json"] = json.loads(row["definition_json"])
             row["is_published"] = bool(row["is_published"])
             return row
+
+    @staticmethod
+    def deactivate_workflow(workflow_id: int) -> bool:
+        with get_db_cursor() as (_, cursor):
+            cursor.execute(
+                """
+                UPDATE workflows
+                SET status = %s
+                WHERE id = %s AND status <> %s
+                """,
+                ("inactive", workflow_id, "inactive"),
+            )
+            return cursor.rowcount > 0

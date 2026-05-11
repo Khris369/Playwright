@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Query, status
 
 from app.schemas.workflow import (
     WorkflowCreate,
@@ -21,8 +21,8 @@ def create_workflow(payload: WorkflowCreate) -> WorkflowResponse:
 
 
 @router.get("", response_model=list[WorkflowResponse])
-def list_workflows() -> list[WorkflowResponse]:
-    rows = WorkflowRepository.list_workflows()
+def list_workflows(active_only: bool = Query(default=False)) -> list[WorkflowResponse]:
+    rows = WorkflowRepository.list_workflows(active_only=active_only)
     return [WorkflowResponse(**row) for row in rows]
 
 
@@ -81,3 +81,12 @@ def update_workflow_version(
             status_code=status.HTTP_404_NOT_FOUND, detail="Workflow version not found"
         )
     return WorkflowVersionResponse(**row)
+
+
+@router.delete("/{workflow_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_workflow(workflow_id: int) -> None:
+    updated = WorkflowRepository.deactivate_workflow(workflow_id)
+    if not updated:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Active workflow not found"
+        )

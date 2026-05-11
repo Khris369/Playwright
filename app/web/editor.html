@@ -18,53 +18,88 @@
       <p class="hint">This page edits one workflow only. Open it from Dashboard using the "Edit Workflow" button.</p>
     </section>
 
-    <div class="panel-grid two-col">
-      <section class="card">
-        <h2>Workflow</h2>
-        <div id="editor-current-workflow" class="current-workflow-indicator">
-          No workflow selected
-        </div>
-        <select id="editor-workflow-id">
-          <option value="">Select workflow...</option>
-        </select>
-        <div class="grid2">
-          <input id="selected-workflow-id" placeholder="Workflow ID (int)">
-          <button id="btn-load-workflow">Load Workflow</button>
-        </div>
-        <pre id="workflow-details" class="json"></pre>
-      </section>
-
-      <section class="card">
-        <h2>Versions</h2>
-        <pre id="workflow-versions" class="json"></pre>
-      </section>
-    </div>
-
     <section class="card version-editor-card">
-      <h2>Version Editor</h2>
-      <p class="hint">Latest version auto-loads. Modify steps below and create the next version.</p>
-      <div class="grid3">
-        <input id="ver-workflow-id" placeholder="Workflow ID (int)">
-        <input id="ver-current-version-id" placeholder="Current Version ID" readonly>
-        <input id="ver-number" type="number" value="1" min="1" placeholder="Version number">
-        <label><input id="ver-published" type="checkbox" checked> Published</label>
-      </div>
-      <div class="builder-toolbar">
-        <select id="step-type-select">
-          <option value="">Loading step types...</option>
-        </select>
-        <button id="btn-add-step" type="button">Add Step</button>
-        <button id="btn-sync-from-json" type="button">Load From JSON</button>
+      <div class="version-editor-sticky">
+        <div class="editor-header-sticky">
+          <div class="editor-title-row">
+            <h2>Edit Workflow</h2>
+            <button id="btn-save-version" type="button" class="btn-primary">Save Version</button>
+          </div>
+          <p class="hint">Latest version auto-loads. Modify steps below and create the next version.</p>
+          <div id="editor-current-workflow" class="current-workflow-indicator">
+            No workflow selected
+          </div>
+          <div class="grid3">
+            <select id="editor-workflow-id">
+              <option value="">Select workflow...</option>
+            </select>
+            <div></div>
+            <button id="btn-load-workflow">Load Workflow</button>
+          </div>
+          <input id="selected-workflow-id" type="hidden">
+          <details class="preview-toggle">
+            <summary>Preview Workflow JSON</summary>
+            <pre id="workflow-details" class="json"></pre>
+          </details>
+          <details class="preview-toggle">
+            <summary>Preview Versions JSON</summary>
+            <pre id="workflow-versions" class="json"></pre>
+          </details>
+        </div>
+        <div class="workflow-info-card">
+          <h3>Workflow Info</h3>
+          <div>Version ID: <strong id="wf-info-version-id">-</strong></div>
+          <div>Workflow ID: <strong id="wf-info-workflow-id">-</strong></div>
+          <div>Revision: <strong id="wf-info-revision">-</strong></div>
+        </div>
+        <div class="grid3">
+          <input id="ver-workflow-id" type="hidden">
+          <input id="ver-current-version-id" type="hidden">
+          <div class="input-group">
+            <label class="field-label" for="ver-revision-id">Revision</label>
+            <select id="ver-revision-id">
+              <option value="">Select revision...</option>
+            </select>
+          </div>
+          <div class="input-group">
+            <label class="field-label" for="btn-create-version">Next Revision</label>
+            <button id="btn-create-version" type="button" class="btn-primary">Create Next Version</button>
+          </div>
+          <div class="input-group">
+            <label class="field-label">Visibility</label>
+            <label class="inline-check"><input id="ver-published" type="checkbox" checked> Published</label>
+          </div>
+        </div>
+        <div class="builder-toolbar">
+          <div class="builder-toolbar-row">
+            <div class="input-group">
+              <label class="field-label" for="step-type-select">Step Type</label>
+              <select id="step-type-select">
+                <option value="">Loading step types...</option>
+              </select>
+            </div>
+            <button id="btn-add-step" type="button" class="btn-secondary">Add Step</button>
+          </div>
+          <div class="builder-toolbar-row builder-toolbar-row-secondary">
+            <button id="btn-refresh-workflows" type="button" class="btn-secondary">Refresh</button>
+            <button id="btn-sync-from-json" type="button" class="btn-secondary">Load From JSON</button>
+            <button id="btn-open-json-sidebar" type="button">JSON Preview</button>
+          </div>
+        </div>
       </div>
       <div class="editor-split">
         <div id="step-builder" class="step-builder"></div>
-        <textarea id="ver-definition" rows="18"></textarea>
-      </div>
-      <div class="grid2">
-        <button id="btn-save-version" type="button">Save Current Version</button>
-        <button id="btn-create-version">Create New Version</button>
+        <div class="json-sidebar-anchor"></div>
       </div>
     </section>
+    <div id="json-sidebar-overlay" class="json-sidebar-overlay"></div>
+    <aside id="json-sidebar" class="json-sidebar">
+      <div class="json-sidebar-header">
+        <h3>Definition JSON</h3>
+        <button id="btn-close-json-sidebar" type="button" class="close-btn">&times;</button>
+      </div>
+      <textarea id="ver-definition" rows="18"></textarea>
+    </aside>
 
     <button id="btn-toggle-assistant" class="floating-assistant-btn">✨ Editor Assistant</button>
     <div id="floating-assistant" class="floating-window card" style="display: none;">
