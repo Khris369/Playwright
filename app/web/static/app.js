@@ -1191,6 +1191,26 @@ on("btn-sync-from-json", "click", () => {
   }
 });
 
+on("btn-expand-all-steps", "click", () => {
+  const builder = $("step-builder");
+  if (!builder) {
+    return;
+  }
+  builder.querySelectorAll(".step-collapse").forEach((el) => {
+    el.open = true;
+  });
+});
+
+on("btn-retract-all-steps", "click", () => {
+  const builder = $("step-builder");
+  if (!builder) {
+    return;
+  }
+  builder.querySelectorAll(".step-collapse").forEach((el) => {
+    el.open = false;
+  });
+});
+
 on("ver-definition", "change", () => {
   try {
     syncStepsFromJson();

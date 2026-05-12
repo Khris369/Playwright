@@ -280,6 +280,15 @@ button:disabled {
 .builder-toolbar-row-secondary {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
+.step-collapse-controls {
+  display: inline-flex;
+  gap: 8px;
+  justify-self: start;
+}
+.step-collapse-controls button {
+  width: auto;
+  min-width: 120px;
+}
 .inline-check {
   display: inline-flex;
   align-items: center;
