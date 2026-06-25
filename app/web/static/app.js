@@ -29,8 +29,10 @@ function autoResizeTextarea(el, { minRows = 3, maxRows = 24 } = {}) {
   el.rows = estimateRowsFromContent(el.value, minRows, maxRows);
   el.style.height = "auto";
   const lineHeight = parseFloat(window.getComputedStyle(el).lineHeight) || 22;
+  const minHeightPx = Math.ceil(lineHeight * minRows) + 24;
   const maxHeightPx = Math.ceil(lineHeight * maxRows) + 24;
-  el.style.height = `${Math.min(el.scrollHeight, maxHeightPx)}px`;
+  const targetHeight = Math.max(minHeightPx, Math.min(el.scrollHeight, maxHeightPx));
+  el.style.height = `${targetHeight}px`;
 }
 
 function autoResizeById(id, options) {
