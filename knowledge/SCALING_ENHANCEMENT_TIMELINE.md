@@ -63,17 +63,6 @@ Planned work:
 - Add annotations or comments per step.
 - Add a dry-run validation button.
 - Add basic version comparison: current revision vs previous revision.
-
-Deliverable:
-- Builder supports larger workflows without becoming difficult to scan or edit.
-
-Outcome:
-- Workflows with 50-100+ steps become manageable.
-
-### Weeks 5-6 - Node-Based Visual Workflow Builder
-**Objective:** Introduce an advanced n8n-style workflow canvas after the linear builder is stable.
-
-Planned work:
 - Add future design direction for a node-based visual workflow builder, similar to n8n-style workflow automation canvases.
 - Evaluate frontend libraries:
   - React Flow
@@ -88,12 +77,14 @@ Planned work:
 - Defer conditional branching until the runner supports it safely.
 
 Deliverable:
-- Technical design and first canvas prototype for node-based workflow editing.
+- Builder supports larger workflows without becoming difficult to scan or edit.
+- Technical design and first prototype direction for node-based workflow editing.
 
 Outcome:
+- Workflows with 50-100+ steps become manageable.
 - Users can start modeling more complex workflows visually, while the stable linear builder remains available.
 
-### Weeks 7-8 - Execution Reliability
+### Weeks 5-6 - Execution Reliability
 **Objective:** Improve repeatability and failure diagnosis.
 
 Planned work:
@@ -116,7 +107,7 @@ Deliverable:
 Outcome:
 - Failures become easier to debug and less flaky.
 
-### Weeks 9-10 - Larger Test Runs
+### Weeks 7-8 - Larger Test Runs
 **Objective:** Support bigger execution volume.
 
 Planned work:
@@ -134,7 +125,7 @@ Deliverable:
 Outcome:
 - The application can run larger suites without blocking the UI/API.
 
-### Weeks 11-12 - Test Data and Reusability
+### Weeks 9-10 - Test Data and Reusability
 **Objective:** Make workflows reusable across brands, environments, and scenarios.
 
 Planned work:
@@ -159,7 +150,7 @@ Deliverable:
 Outcome:
 - One workflow can support many test cases through data and environment configuration.
 
-### Weeks 13-14 - Security and Governance
+### Weeks 11-12 - Security and Governance
 **Objective:** Protect credentials, workflow changes, and run operations.
 
 Planned work:
