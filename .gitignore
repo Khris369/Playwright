@@ -7,3 +7,4 @@ tests/
 .env.example
 allure-results-call/
 venv/
+plan/
