@@ -44,7 +44,7 @@ _items = (
     StepDefinition("fill_input", "Fill input", "Interaction", "Fill a text control.", TargetValueArgs, {"target": LABEL_TARGET, "value": ""}, _editor("target", "value"), executor.fill_input),
     StepDefinition("select_option", "Select option", "Interaction", "Select explicitly by label, value, or index.", SelectOptionArgs, {"target": LABEL_TARGET, "option": {"by": "label", "value": "Option"}}, _editor("target", "option"), executor.select_option),
     StepDefinition("wait_for_element", "Wait for element", "Wait", "Wait for a visible target.", WaitForElementArgs, {"target": LABEL_TARGET, "timeout_ms": 30000}, _editor("target", "timeout_ms"), executor.wait_for_element),
-    StepDefinition("wait_timeout", "Wait timeout", "Wait", "Wait a bounded duration.", WaitTimeoutArgs, {"timeout_ms": 1000}, _editor("Timeout (seconds)"), executor.wait_timeout),
+    StepDefinition("wait_timeout", "Wait timeout", "Wait", "Wait a bounded duration.", WaitTimeoutArgs, {"timeout_ms": 1000}, _editor("timeout_ms"), executor.wait_timeout),
     StepDefinition("assert_url_not_equal", "Assert URL changed", "Assertion", "Require the current URL to differ.", AssertUrlNotEqualArgs, {"url": "https://example.com/login"}, _editor("url"), executor.assert_url_not_equal),
     StepDefinition("assert_text_visible", "Assert text visible", "Assertion", "Require unique visible text.", AssertTextVisibleArgs, {"text": "Success", "exact": True}, _editor("text", "exact"), executor.assert_text_visible),
     StepDefinition("ticket_select_scenario", "Select ticket scenario", "Ticket", "Select a ticket scenario.", TicketScenarioArgs, {"scenario_name": "Scenario name"}, _editor("scenario_name"), executor.ticket_select_scenario),
