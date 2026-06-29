@@ -1,3 +1,5 @@
+# Backend-only Python dependencies.
+# React/Vite dependencies are managed in editor/package.json with npm.
 fastapi
 uvicorn[standard]
 pymysql

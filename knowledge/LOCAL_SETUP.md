@@ -4,12 +4,14 @@
 This guide explains how to clone the repository and run the workflow builder locally.
 
 The current default mode runs workflow executions inline from the API process. Redis and Celery are optional unless you intentionally switch to queued execution.
+The dashboard lives at `/ui`, and the dedicated React/Vite editor lives at `/ui/editor`.
 
 ## Prerequisites
 
 Install these before starting:
 
 - Python 3.11 or newer
+- Node.js 20 or newer
 - MySQL 8 or compatible MySQL/MariaDB server
 - Git
 - A terminal or PowerShell
@@ -48,7 +50,25 @@ python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-## 4. Install Playwright Browsers
+## 4. Install Editor Dependencies
+
+The React/Vite editor is managed separately from the Python backend.
+
+```powershell
+cd editor
+npm ci
+cd ..
+```
+
+## 5. Build the Editor
+
+```powershell
+cd editor
+npm run build
+cd ..
+```
+
+## 6. Install Playwright Browsers
 
 ```powershell
 python -m playwright install
@@ -60,7 +80,7 @@ For Chromium only:
 python -m playwright install chromium
 ```
 
-## 5. Create the MySQL Database
+## 7. Create the MySQL Database
 
 Log in to MySQL and create the database:
 
@@ -78,7 +98,7 @@ mysql -u root -p -e "CREATE DATABASE IF NOT EXISTS workflow_builder CHARACTER SE
 
 If your local MySQL root user has no password, omit `-p`.
 
-## 6. Create the `.env` File
+## 8. Create the `.env` File
 
 Create a `.env` file in the project root.
 
@@ -130,7 +150,7 @@ Notes:
 - Leave `OPENAI_API_KEY` blank unless using AI troubleshooting/editor assistant features.
 - Do not commit `.env`.
 
-## 7. Apply SQL Files
+## 9. Apply SQL Files
 
 Apply SQL files from `sql/` in numeric order.
 
@@ -143,6 +163,7 @@ Current ordered files:
 5. `005_step_types_click_by_role.sql`
 6. `006_run_arg_presets.sql`
 7. `007_run_arg_presets_is_active.sql`
+8. `008_workflow_graph_versioning.sql`
 
 Example:
 
@@ -154,6 +175,7 @@ mysql -u root -p workflow_builder < sql\004_step_types_ticket_steps.sql
 mysql -u root -p workflow_builder < sql\005_step_types_click_by_role.sql
 mysql -u root -p workflow_builder < sql\006_run_arg_presets.sql
 mysql -u root -p workflow_builder < sql\007_run_arg_presets_is_active.sql
+mysql -u root -p workflow_builder < sql\008_workflow_graph_versioning.sql
 ```
 
 If your MySQL user has no password:
@@ -168,7 +190,7 @@ Important:
 - Some SQL files may be compatibility no-ops for newer fresh databases. Still apply them in order.
 - `001_init.sql` includes `USE workflow_builder;`, so make sure the database exists before applying it.
 
-## 8. Verify Database Connection
+## 10. Verify Database Connection
 
 ```powershell
 python test_db_connection.py
@@ -185,7 +207,7 @@ If this fails, check:
 - `.env` database host, port, username, and password are correct.
 - The `workflow_builder` database exists.
 
-## 9. Start the API Server
+## 11. Start the API Server
 
 ```powershell
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
@@ -194,10 +216,10 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 Open:
 
 - Dashboard: `http://127.0.0.1:8000/ui`
-- Editor: `http://127.0.0.1:8000/ui/editor`
+- Editor: `http://127.0.0.1:8000/ui/editor?workflow_id=<id>`
 - Health check: `http://127.0.0.1:8000/health`
 
-## 10. Verify the App
+## 12. Verify the App
 
 In a second terminal:
 
@@ -217,7 +239,7 @@ Functional smoke test:
 3. Open the editor.
 4. Add or edit steps.
 5. Save the version.
-6. Go to the run area.
+6. Use the editor Runs tab to open the dashboard Runs view for that workflow/version.
 7. Generate input template.
 8. Trigger a run.
 9. Monitor the run and step logs.
@@ -312,4 +334,3 @@ Core workflow builder features should still work without it.
 - For larger team use, review the future plans in:
   - `knowledge/SCALING_ENHANCEMENT_TIMELINE.md`
   - `knowledge/LOCAL_AGENT_FUTURE_PLAN.md`
-

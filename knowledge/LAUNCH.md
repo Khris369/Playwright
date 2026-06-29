@@ -6,12 +6,15 @@ How to run the current workflow builder stack locally.
 Current default behavior:
 - API executes workflow runs inline (same process/session) to support headed browser visibility.
 - Redis/Celery are optional unless you explicitly switch back to queued mode.
+- The dashboard lives at `/ui`.
+- The dedicated React/Vite editor lives at `/ui/editor`.
 
 ## Prerequisites
 - Python virtualenv at `./venv`
 - Dependencies installed from `requirements.txt`
 - MySQL database reachable from `.env`
 - SQL files applied from `sql/`
+- Node.js 20+ and npm for the editor build
 
 ## Required SQL
 Apply in order:
@@ -21,8 +24,18 @@ Apply in order:
 4. `004_step_types_ticket_steps.sql`
 5. `005_step_types_click_by_role.sql`
 6. `006_run_arg_presets.sql`
+7. `007_run_arg_presets_is_active.sql`
+8. `008_workflow_graph_versioning.sql`
 
 ## Local Launch (Default Inline Mode)
+
+Build the frontend editor:
+```powershell
+cd editor
+npm ci
+npm run build
+cd ..
+```
 
 Run API:
 ```powershell
@@ -31,7 +44,7 @@ Run API:
 
 Open UI:
 - Dashboard: `http://127.0.0.1:8000/ui`
-- Editor: `http://127.0.0.1:8000/ui/editor`
+- Editor: `http://127.0.0.1:8000/ui/editor?workflow_id=<id>`
 
 ## Verification Checklist
 1. Root:
@@ -50,14 +63,17 @@ Expected: `status = ok`.
 - `GET /ui`
 - `GET /ui/editor`
 - `GET /ui/static/app.js`
+- `GET /ui/editor/assets/*`
 
 4. Functional smoke:
 - Create/import workflow.
 - Open editor, select revision, create next version, and save current version.
+- Use the editor Runs tab to jump to the dashboard Runs view for the active workflow/version.
 - In Runs tab: select workflow/version, generate input template, save/load preset, trigger run.
 
 ## Current UX Notes (Implemented)
 - Dashboard `/ui` now combines workflow selection and editing in one primary editor card.
+- Dashboard `/ui` also supports `?tab=runs&run_workflow_id=<id>&run_version_id=<id>` deep links from the editor.
 - Workflow create panel is collapsible (`+ Create New Workflow`).
 - Workflow selector is active-only; deleting workflow sets status to `inactive`.
 - Revision is selected from a revision dropdown per workflow (`ver-revision-id`), not typed manually.
@@ -94,3 +110,6 @@ Worker command:
 - Browser window not visible:
   - Ensure API is running in an interactive desktop session.
   - Headed windows appear where API process is running.
+- Editor build problems:
+  - Run `cd editor && npm ci && npm run build`.
+  - Confirm Node.js 20+ is installed.
