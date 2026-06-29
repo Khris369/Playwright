@@ -14,3 +14,6 @@
 5. `005_step_types_click_by_role.sql` (compatibility no-op; consolidated into `003`)
 6. `006_run_arg_presets.sql` (compatibility no-op; consolidated into `001`)
 7. `007_run_arg_presets_is_active.sql` (additive safety migration for pre-consolidation DBs)
+# Graph editor migration
+
+`008_workflow_graph_versioning.sql` adds optimistic-locking columns and indexes for schema-version-2 graph definitions. It is intentionally not applied automatically.

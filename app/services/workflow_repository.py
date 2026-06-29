@@ -60,6 +60,9 @@ class WorkflowRepository:
     def create_workflow_version(
         workflow_id: int, payload: WorkflowVersionCreate
     ) -> dict:
+        from app.services.workflow_version_repository import WorkflowVersionRepository
+        return WorkflowVersionRepository.create(workflow_id, payload)
+        # Legacy SQL below is unreachable and retained only for source-history context.
         with get_db_cursor() as (_, cursor):
             cursor.execute("SELECT id FROM workflows WHERE id = %s", (workflow_id,))
             if cursor.fetchone() is None:
@@ -96,6 +99,9 @@ class WorkflowRepository:
 
     @staticmethod
     def list_workflow_versions(workflow_id: int) -> list[dict]:
+        from app.services.workflow_version_repository import WorkflowVersionRepository
+        return WorkflowVersionRepository.list(workflow_id)
+        # Legacy SQL below is unreachable and retained only for source-history context.
         with get_db_cursor() as (_, cursor):
             cursor.execute(
                 """
@@ -115,6 +121,9 @@ class WorkflowRepository:
 
     @staticmethod
     def get_workflow_version(version_id: int) -> dict | None:
+        from app.services.workflow_version_repository import WorkflowVersionRepository
+        return WorkflowVersionRepository.get(version_id)
+        # Legacy SQL below is unreachable and retained only for source-history context.
         with get_db_cursor() as (_, cursor):
             cursor.execute(
                 """
@@ -134,6 +143,9 @@ class WorkflowRepository:
 
     @staticmethod
     def update_workflow_version(version_id: int, payload: WorkflowVersionUpdate) -> dict | None:
+        from app.services.workflow_version_repository import WorkflowVersionRepository
+        return WorkflowVersionRepository.update(version_id, payload)
+        # Legacy SQL below is unreachable and retained only for source-history context.
         with get_db_cursor() as (_, cursor):
             cursor.execute("SELECT id FROM workflow_versions WHERE id = %s", (version_id,))
             if cursor.fetchone() is None:

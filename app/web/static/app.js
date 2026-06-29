@@ -45,36 +45,30 @@ function autoResizeById(id, options) {
 }
 
 const defaultDefinition = {
-  steps: [
-    { type: "goto_url", args: { url: "{{inputs.base_url}}" } },
-    { type: "fill_input", args: { selector: "#username", value: "{{inputs.username}}" } },
-    { type: "click", args: { selector: "button[type='submit']" } }
-  ]
+  schema_version: 2,
+  graph: {
+    nodes: [{ id: "00000000-0000-4000-8000-000000000001", kind: "start", position: { x: 80, y: 160 } }],
+    edges: [],
+    viewport: { x: 0, y: 0, zoom: 1 }
+  }
 };
 
 const stepTemplates = {
   goto_url: { url: "{{inputs.base_url}}" },
-  fill_input: { selector: "", value: "" },
-  click: { selector: "" },
-  click_by_role: { role: "button", name: "Submit", scope_selector: "", nth: 0, exact: true },
-  select_option: { selector: "", value: "" },
-  wait_for_element: { selector: "" },
+  fill_input: { target: { strategy: "label", label: "Field" }, value: "" },
+  click: { target: { strategy: "role", role: "button", name: "Submit" } },
+  select_option: { target: { strategy: "label", label: "Field" }, option: { by: "label", value: "Option" } },
+  wait_for_element: { target: { strategy: "text", text: "Ready" } },
   wait_timeout: { timeout_ms: 1000 },
   assert_url_not_equal: { url: "" },
   assert_text_visible: { text: "" },
-  run_custom_action: { action: "" },
   ticket_select_scenario: { scenario_name: "{{inputs.scenario_name}}" },
   ticket_create_new_ticket: {},
   ticket_fill_fields: {
     fields: [
-      { label: "Reference ID", type: "text", value: "AUTO-REF-001" },
-      { label: "Description", type: "text", value: "Created by workflow builder." }
+      { target: { strategy: "label", label: "Reference ID" }, control_type: "text", value: "AUTO-REF-001" },
+      { target: { strategy: "label", label: "Description" }, control_type: "text", value: "Created by workflow builder." }
     ]
-  },
-  ticket_fill_fields_from_scenario: {
-    scenario_name: "{{inputs.scenario_name}}",
-    brand: "{{inputs.brand}}",
-    ticket_data_path: "{{inputs.ticket_data_path}}"
   },
   ticket_submit: {},
 };
@@ -557,16 +551,28 @@ function renderStepBuilder() {
   });
 }
 
-function setActiveTab(tabName) {
-  document.querySelectorAll(".tab").forEach((tab) => {
-    const active = tab.getAttribute("data-tab") === tabName;
-    tab.classList.toggle("is-active", active);
-    tab.setAttribute("aria-selected", active ? "true" : "false");
+  function setActiveTab(tabName) {
+    document.querySelectorAll(".tab").forEach((tab) => {
+      const active = tab.getAttribute("data-tab") === tabName;
+      tab.classList.toggle("is-active", active);
+      tab.setAttribute("aria-selected", active ? "true" : "false");
   });
-  document.querySelectorAll(".tab-panel").forEach((panel) => {
-    panel.classList.toggle("is-active", panel.getAttribute("data-panel") === tabName);
-  });
-}
+    document.querySelectorAll(".tab-panel").forEach((panel) => {
+      panel.classList.toggle("is-active", panel.getAttribute("data-panel") === tabName);
+    });
+  }
+
+  function getInitialQueryState() {
+    const params = new URLSearchParams(window.location.search);
+    const workflowId = Number(params.get("run_workflow_id"));
+    const versionId = Number(params.get("run_version_id"));
+    const tab = params.get("tab");
+    return {
+      tab,
+      workflowId: Number.isFinite(workflowId) && workflowId > 0 ? workflowId : null,
+      versionId: Number.isFinite(versionId) && versionId > 0 ? versionId : null,
+    };
+  }
 
 function collectInputPaths(value, outputSet) {
   if (typeof value === "string") {
@@ -841,12 +847,12 @@ async function refreshWorkflows() {
     const canLoadDetails = Boolean($("selected-workflow-id") && $("workflow-details") && $("workflow-versions"));
     document.querySelectorAll("#workflow-list .item.clickable").forEach((el) => {
       el.addEventListener("click", () => {
-        if (!canLoadDetails) {
-          return;
-        }
         const workflowId = Number(el.getAttribute("data-workflow-id"));
+        setValueIfPresent("selected-workflow-id", workflowId);
         setSelectedWorkflowListItem(workflowId);
-        loadWorkflowDetails(workflowId);
+        if (canLoadDetails) {
+          loadWorkflowDetails(workflowId);
+        }
       });
     });
     const selectedId = Number(($("selected-workflow-id") || {}).value);
@@ -856,11 +862,11 @@ async function refreshWorkflows() {
   }
 }
 
-async function refreshRunVersionsForWorkflow(workflowId) {
-  const runVersionSelect = $("run-version-id");
-  if (!runVersionSelect) {
-    return;
-  }
+  async function refreshRunVersionsForWorkflow(workflowId, preferredVersionId = null) {
+    const runVersionSelect = $("run-version-id");
+    if (!runVersionSelect) {
+      return;
+    }
   if (!workflowId) {
     runVersionSelect.innerHTML = `<option value="">Select version...</option>`;
     updateRunControlsState();
@@ -879,17 +885,40 @@ async function refreshRunVersionsForWorkflow(workflowId) {
     : `<option value="">No versions found</option>`;
   updateRunControlsState();
 
-  if (versions.length) {
-    runVersionSelect.value = String(versions[0].id);
-    updateRunControlsState();
-    try {
-      await generateRunInputsTemplate();
-    } catch (_err) {
+    if (versions.length) {
+      const selectedVersion = preferredVersionId && versions.some((version) => version.id === preferredVersionId)
+        ? preferredVersionId
+        : versions[0].id;
+      runVersionSelect.value = String(selectedVersion);
+      updateRunControlsState();
+      try {
+        await generateRunInputsTemplate();
+      } catch (_err) {
       // keep UI usable even if template generation fails
     }
   }
   await refreshRunArgPresets();
 }
+
+  function clearRunMonitorPreview() {
+    if ($("monitor-run-id")) {
+      $("monitor-run-id").value = "";
+    }
+    if ($("run-details")) {
+      $("run-details").textContent = "";
+    }
+    if ($("step-details")) {
+      $("step-details").textContent = "";
+    }
+  }
+
+  async function loadRunMonitor(runId) {
+    const run = await api(`/workflow-runs/${runId}`);
+    const steps = await api(`/workflow-runs/${runId}/steps`);
+    $("run-details").textContent = JSON.stringify(run, null, 2);
+    $("step-details").textContent = JSON.stringify(steps, null, 2);
+    return { run, steps };
+  }
 
 async function refreshTemplates() {
   const items = await api("/workflow-templates");
@@ -921,12 +950,11 @@ async function loadWorkflowDetails(workflowId) {
     $("workflow-versions").textContent = JSON.stringify(versions, null, 2);
   }
   setValueIfPresent("ver-workflow-id", workflowId);
+  setValueIfPresent("run-workflow-id", workflowId);
   if (latestVersion) {
     populateRevisionDropdown(versions, latestVersion.id);
     loadVersionIntoEditor(latestVersion, workflowId);
-    if ($("run-version-id")) {
-      $("run-version-id").value = latestVersion.id;
-    }
+    await refreshRunVersionsForWorkflow(workflowId, latestVersion.id);
   } else {
     populateRevisionDropdown([]);
     setValueIfPresent("ver-current-version-id", "");
@@ -944,6 +972,7 @@ async function loadWorkflowDetails(workflowId) {
     if ($("step-builder")) {
       syncStepsFromJson();
     }
+    await refreshRunVersionsForWorkflow(workflowId, null);
   }
   updateCurrentWorkflowIndicator(workflow);
 }
@@ -976,6 +1005,7 @@ on("btn-create-workflow", "click", async () => {
     await refreshWorkflows();
     setValueIfPresent("editor-workflow-id", created.id);
     await loadWorkflowDetails(created.id);
+    clearRunMonitorPreview();
   } catch (err) {
     toast(err.message, true);
   }
@@ -1026,9 +1056,11 @@ on("btn-import-template", "click", async () => {
     $("template-import-result").textContent = JSON.stringify(imported, null, 2);
     setValueIfPresent("selected-workflow-id", imported.workflow.id);
     setValueIfPresent("ver-workflow-id", imported.workflow.id);
+    setValueIfPresent("run-workflow-id", imported.workflow.id);
     setValueIfPresent("run-version-id", imported.version.id);
     await refreshWorkflows();
     await loadWorkflowDetails(imported.workflow.id);
+    clearRunMonitorPreview();
     toast(`Imported template #${templateId} -> workflow #${imported.workflow.id}`);
     setActiveTab("workflows");
   } catch (err) {
@@ -1074,6 +1106,9 @@ on("btn-delete-workflow", "click", async () => {
     populateRevisionDropdown([]);
     updateWorkflowInfoPanel(null, null);
     updateVersionPrimaryActions();
+    setValueIfPresent("run-workflow-id", "");
+    setValueIfPresent("run-version-id", "");
+    clearRunMonitorPreview();
     if ($("workflow-details")) {
       $("workflow-details").textContent = "";
     }
@@ -1230,6 +1265,7 @@ on("btn-trigger-run", "click", async () => {
     const run = await api("/workflow-runs", { method: "POST", body: JSON.stringify(payload) });
     $("run-created").textContent = `Created run #${run.id} status=${run.status}`;
     $("monitor-run-id").value = run.id;
+    await loadRunMonitor(run.id);
     toast(`Run queued: #${run.id}`);
   } catch (err) {
     toast(err.message, true);
@@ -1337,10 +1373,7 @@ on("btn-generate-run-inputs", "click", async () => {
 on("btn-monitor-run", "click", async () => {
   try {
     const runId = Number($("monitor-run-id").value);
-    const run = await api(`/workflow-runs/${runId}`);
-    const steps = await api(`/workflow-runs/${runId}/steps`);
-    $("run-details").textContent = JSON.stringify(run, null, 2);
-    $("step-details").textContent = JSON.stringify(steps, null, 2);
+    await loadRunMonitor(runId);
     toast(`Loaded run #${runId}`);
   } catch (err) {
     toast(err.message, true);
@@ -1429,9 +1462,18 @@ on("btn-editor-assistant-ask", "click", async () => {
   }
 });
 
-checkApi();
+  checkApi();
 if ($("workflow-list") || $("editor-workflow-id") || $("run-workflow-id")) {
-  refreshWorkflows();
+  refreshWorkflows().then(async () => {
+    const initial = getInitialQueryState();
+    if (initial.tab) {
+      setActiveTab(initial.tab);
+    }
+    if (initial.workflowId && $("run-workflow-id")) {
+      setValueIfPresent("run-workflow-id", initial.workflowId);
+      await refreshRunVersionsForWorkflow(initial.workflowId, initial.versionId);
+    }
+  });
 }
 if ($("run-preset-id")) {
   refreshRunArgPresets();

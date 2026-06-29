@@ -19,8 +19,11 @@ CREATE TABLE IF NOT EXISTS `workflow_builder`.`workflow_versions` (
   `version_number` INT NOT NULL,
   `is_published` TINYINT(1) NOT NULL DEFAULT 0,
   `definition_json` JSON NOT NULL,
+  `lock_version` INT NOT NULL DEFAULT 0,
   `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`)
+  `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uniq_workflow_versions_number` (`workflow_id`, `version_number`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `workflow_builder`.`workflow_runs` (
@@ -35,7 +38,8 @@ CREATE TABLE IF NOT EXISTS `workflow_builder`.`workflow_runs` (
   `finished_at` DATETIME NULL,
   `error_summary` TEXT NULL,
   `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`)
+  PRIMARY KEY (`id`),
+  KEY `idx_workflow_runs_version_created` (`workflow_version_id`, `created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `workflow_builder`.`workflow_step_runs` (
@@ -53,7 +57,8 @@ CREATE TABLE IF NOT EXISTS `workflow_builder`.`workflow_step_runs` (
   `error_text` LONGTEXT NULL,
   `screenshot_path` TEXT NULL,
   `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`)
+  PRIMARY KEY (`id`),
+  KEY `idx_workflow_step_runs_run_step` (`workflow_run_id`, `step_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `workflow_builder`.`workflow_templates` (
@@ -92,16 +97,14 @@ VALUES
   ('goto_url', 'Go To URL', 'Navigate browser page to a URL.', 1, 10),
   ('fill_input', 'Fill Input', 'Type or fill a value into an input element.', 1, 20),
   ('click', 'Click Element', 'Click an element using a selector.', 1, 30),
-  ('click_by_role', 'Click By Role', 'Click an element by role and accessible name (with optional scope).', 1, 35),
   ('select_option', 'Select Option', 'Select a value/label in a dropdown.', 1, 40),
   ('wait_for_element', 'Wait For Element', 'Wait until an element is present/visible.', 1, 50),
+  ('wait_timeout', 'Wait Timeout', 'Wait for a bounded duration.', 1, 55),
   ('assert_url_not_equal', 'Assert URL Not Equal', 'Assert the current URL is not equal to a given value.', 1, 60),
   ('assert_text_visible', 'Assert Text Visible', 'Assert specific text is visible on the page.', 1, 70),
-  ('run_custom_action', 'Run Custom Action', 'Execute a registered custom action handler.', 1, 80),
   ('ticket_select_scenario', 'Ticket Select Scenario', 'Select scenario in the ticket UI scenario dropdown.', 1, 90),
   ('ticket_create_new_ticket', 'Ticket Create New Ticket', 'Click Create New Ticket and prepare ticket form scope.', 1, 100),
   ('ticket_fill_fields', 'Ticket Fill Fields (Inline)', 'Fill ticket form fields from args.fields (ticket-scenario structure).', 1, 110),
-  ('ticket_fill_fields_from_scenario', 'Ticket Fill Fields From Scenario', 'Fill ticket fields by reading scenario data from file path.', 1, 120),
   ('ticket_submit', 'Ticket Submit', 'Submit ticket and confirm dialog.', 1, 130);
 
 CREATE TABLE IF NOT EXISTS `workflow_builder`.`run_arg_presets` (

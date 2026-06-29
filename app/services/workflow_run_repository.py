@@ -8,15 +8,17 @@ from app.services.db import get_db_cursor
 class WorkflowRunRepository:
     @staticmethod
     def create_queued_run(
-        workflow_id: int, workflow_version_id: int, inputs: dict | None = None
+        workflow_id: int, workflow_version_id: int, resolved_definition: dict,
+        inputs: dict | None = None
     ) -> int:
         with get_db_cursor() as (_, cursor):
             cursor.execute(
                 """
                 INSERT INTO workflow_runs (
-                    workflow_id, workflow_version_id, status, trigger_source, inputs_json
+                    workflow_id, workflow_version_id, status, trigger_source, inputs_json,
+                    resolved_definition_json
                 )
-                VALUES (%s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s)
                 """,
                 (
                     workflow_id,
@@ -24,10 +26,31 @@ class WorkflowRunRepository:
                     "queued",
                     "api",
                     json.dumps(inputs or {}),
+                    json.dumps(resolved_definition),
                 ),
             )
             run_id = int(cursor.lastrowid)
         return run_id
+
+    @staticmethod
+    def list_runs(workflow_version_id: int | None = None, limit: int = 20) -> list[dict]:
+        with get_db_cursor() as (_, cursor):
+            query = """SELECT id, workflow_id, workflow_version_id, status, trigger_source,
+                       inputs_json, resolved_definition_json, started_at, finished_at,
+                       error_summary, created_at FROM workflow_runs"""
+            params: tuple = ()
+            if workflow_version_id is not None:
+                query += " WHERE workflow_version_id = %s"
+                params = (workflow_version_id,)
+            query += " ORDER BY created_at DESC LIMIT %s"
+            params += (limit,)
+            cursor.execute(query, params)
+            rows = list(cursor.fetchall())
+            for row in rows:
+                for key in ("inputs_json", "resolved_definition_json"):
+                    if isinstance(row.get(key), str):
+                        row[key] = json.loads(row[key])
+            return rows
 
     @staticmethod
     def mark_run_running(run_id: int) -> None:

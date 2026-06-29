@@ -3,7 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from app.engine.custom_actions import execute_custom_action
+from app.engine.executor import StepExecutionError, StepResult, execute_step
+
+# Compatibility import only. Runtime execution is registry-backed in executor.py.
+'''Legacy implementation retained as inert source text until the next repository
+history cleanup; none of these handlers are importable or executable.
 
 
 class StepExecutionError(RuntimeError):
@@ -204,3 +208,4 @@ def execute_step(step_type: str, args: dict[str, Any], state: dict[str, Any]) ->
     if handler is None:
         raise StepExecutionError(f"Unsupported step type: {step_type}")
     return handler(args, state)
+'''

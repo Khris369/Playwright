@@ -12,10 +12,17 @@ from app.core.settings import get_settings
 settings = get_settings()
 web_dir = Path(__file__).resolve().parent / "web"
 static_dir = web_dir / "static"
+editor_dist_dir = web_dir / "editor-dist"
 
 app = FastAPI(title=settings.app_name, debug=settings.debug)
 app.include_router(api_router)
 app.mount("/ui/static", StaticFiles(directory=str(static_dir)), name="ui-static")
+if editor_dist_dir.exists():
+    app.mount(
+        "/ui/editor/assets",
+        StaticFiles(directory=str(editor_dist_dir / "assets")),
+        name="editor-assets",
+    )
 
 
 @app.get("/")
@@ -30,4 +37,4 @@ def ui() -> FileResponse:
 
 @app.get("/ui/editor")
 def ui_editor() -> FileResponse:
-    return FileResponse(str(web_dir / "editor.html"))
+    return FileResponse(str(editor_dist_dir / "index.html"))

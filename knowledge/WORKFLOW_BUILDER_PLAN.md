@@ -1,5 +1,15 @@
 # Workflow Builder Plan
 
+## Implemented Graph Architecture (2026-06-29)
+
+The dedicated editor at `/ui/editor?workflow_id=...` is now a React 19, TypeScript, Vite, and React Flow application. The dashboard no longer embeds a step builder; it retains workflow creation/selection, templates, and runs.
+
+Workflow versions store only schema-version-2 graph documents. The backend registry owns supported step metadata, Pydantic argument contracts, handlers, and execution-state requirements. Graph validation rejects non-linear executable graphs and compiles the Start path to stable-ID linear steps. Run creation stores that compiled snapshot in `workflow_runs.resolved_definition_json`; execution never rereads a mutable version.
+
+Versions use manual whole-document saves with `lock_version` optimistic locking. Published versions are read-only until explicitly unpublished. Migration `sql/008_workflow_graph_versioning.sql` is prepared but is not applied automatically.
+
+The currently supported executable steps are `goto_url`, `click`, `fill_input`, `select_option`, `wait_for_element`, `wait_timeout`, `assert_url_not_equal`, `assert_text_visible`, `ticket_select_scenario`, `ticket_create_new_ticket`, `ticket_fill_fields`, and `ticket_submit`. User-supplied file paths, arbitrary actions/code, and legacy selector-shaped steps are not supported.
+
 ## Overview
 This project will evolve the current Playwright test suite into a workflow-builder application that lets users define, run, and monitor browser automation workflows across different websites through a UI instead of writing test code directly.
 

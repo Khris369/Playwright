@@ -17,6 +17,8 @@ class WorkflowRunResponse(BaseModel):
     workflow_version_id: int
     status: str
     trigger_source: str
+    inputs_json: dict[str, Any] | None = None
+    resolved_definition_json: dict[str, Any] | None = None
     started_at: datetime | None = None
     finished_at: datetime | None = None
     error_summary: str | None = None

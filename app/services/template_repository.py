@@ -1,93 +1,105 @@
 from __future__ import annotations
 
 import json
+import uuid
 from typing import Any
 
 from app.schemas.template import WorkflowTemplateCreate
 from app.schemas.workflow import WorkflowCreate, WorkflowVersionCreate
 from app.services.db import get_db_cursor
 from app.services.workflow_repository import WorkflowRepository
+from app.services.workflow_version_repository import WorkflowVersionRepository
+
+
+def _graph(template_key: str, steps: list[dict[str, Any]]) -> dict[str, Any]:
+    start_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"workflow-template:{template_key}:start"))
+    nodes = [{"id": start_id, "kind": "start", "position": {"x": 80, "y": 160}}]
+    edges = []
+    previous = start_id
+    for index, step in enumerate(steps):
+        node_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"workflow-template:{template_key}:node:{index}"))
+        edge_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"workflow-template:{template_key}:edge:{index}"))
+        nodes.append({"id": node_id, "kind": "step", "step_type": step["type"], "args": step["args"], "position": {"x": 360 + index * 280, "y": 160}})
+        edges.append({"id": edge_id, "source": previous, "target": node_id})
+        previous = node_id
+    return {"schema_version": 2, "graph": {"nodes": nodes, "edges": edges, "viewport": {"x": 0, "y": 0, "zoom": 1}}}
 
 
 DEFAULT_TEMPLATES = [
     {
-        "key": "generic_login_flow_v1",
-        "name": "Generic Login Flow",
+        "key": "generic_login_flow_v2",
+        "name": "Generic Login Flow v2",
         "category": "generic",
-        "definition_json": {
-            "steps": [
+        "definition_json": _graph("generic_login_flow_v2", [
                 {"type": "goto_url", "args": {"url": "{{inputs.base_url}}"}},
                 {
                     "type": "fill_input",
                     "args": {
-                        "selector": "{{inputs.username_selector}}",
+                        "target": {"strategy": "css", "selector": "{{inputs.username_selector}}"},
                         "value": "{{inputs.username}}",
                     },
                 },
                 {
                     "type": "fill_input",
                     "args": {
-                        "selector": "{{inputs.password_selector}}",
+                        "target": {"strategy": "css", "selector": "{{inputs.password_selector}}"},
                         "value": "{{inputs.password}}",
                     },
                 },
-                {"type": "click", "args": {"selector": "{{inputs.submit_selector}}"}},
-            ]
-        },
+                {"type": "click", "args": {"target": {"strategy": "css", "selector": "{{inputs.submit_selector}}"}}},
+            ]),
     },
     {
-        "key": "call_platform_create_ticket_v1",
-        "name": "Call Platform Create Ticket v1",
+        "key": "call_platform_create_ticket_v2",
+        "name": "Call Platform Create Ticket v2",
         "category": "ticketing",
-        "definition_json": {
-            "steps": [
+        "definition_json": _graph("call_platform_create_ticket_v2", [
                 {"type": "goto_url", "args": {"url": "{{inputs.base_url}}"}},
                 {
                     "type": "fill_input",
                     "args": {
-                        "selector": "{{inputs.username_selector}}",
+                        "target": {"strategy": "css", "selector": "{{inputs.username_selector}}"},
                         "value": "{{inputs.username}}",
                     },
                 },
                 {
                     "type": "fill_input",
                     "args": {
-                        "selector": "{{inputs.password_selector}}",
+                        "target": {"strategy": "css", "selector": "{{inputs.password_selector}}"},
                         "value": "{{inputs.password}}",
                     },
                 },
-                {"type": "click", "args": {"selector": "{{inputs.login_button_selector}}"}},
-                {"type": "click", "args": {"selector": "{{inputs.call_platform_selector}}"}},
+                {"type": "click", "args": {"target": {"strategy": "css", "selector": "{{inputs.login_button_selector}}"}}},
+                {"type": "click", "args": {"target": {"strategy": "css", "selector": "{{inputs.call_platform_selector}}"}}},
                 {
                     "type": "fill_input",
                     "args": {
-                        "selector": "{{inputs.caller_number_selector}}",
+                        "target": {"strategy": "css", "selector": "{{inputs.caller_number_selector}}"},
                         "value": "{{inputs.caller_number}}",
                     },
                 },
                 {
                     "type": "select_option",
                     "args": {
-                        "selector": "{{inputs.ivr_language_selector}}",
-                        "value": "{{inputs.ivr_language}}",
+                        "target": {"strategy": "css", "selector": "{{inputs.ivr_language_selector}}"},
+                        "option": {"by": "label", "value": "{{inputs.ivr_language}}"},
                     },
                 },
-                {"type": "click", "args": {"selector": "{{inputs.search_button_selector}}"}},
+                {"type": "click", "args": {"target": {"strategy": "css", "selector": "{{inputs.search_button_selector}}"}}},
                 {
                     "type": "wait_for_element",
-                    "args": {"selector": "{{inputs.scenario_dropdown_selector}}"},
+                    "args": {"target": {"strategy": "css", "selector": "{{inputs.scenario_dropdown_selector}}"}},
                 },
                 {
-                    "type": "run_custom_action",
+                    "type": "ticket_select_scenario",
                     "args": {
-                        "action": "create_ticket_flow",
                         "scenario_name": "{{inputs.scenario_name}}",
-                        "brand": "{{inputs.brand}}",
-                        "ticket_data_path": "{{inputs.ticket_data_path}}",
                     },
                 },
-            ]
-        },
+                {"type": "ticket_create_new_ticket", "args": {}},
+                {"type": "ticket_fill_fields", "args": {"fields": [{"target": {"strategy": "label", "label": "Subject"}, "control_type": "text", "value": "{{inputs.subject}}"}]}},
+                {"type": "ticket_submit", "args": {}},
+            ]),
     },
 ]
 
@@ -199,12 +211,12 @@ class TemplateRepository:
                 status=workflow_status,
             )
         )
-        version = WorkflowRepository.create_workflow_version(
+        version = WorkflowVersionRepository.create(
             int(workflow["id"]),
             WorkflowVersionCreate(
-                version_number=version_number,
-                is_published=is_published,
                 definition_json=template["definition_json"],
             ),
         )
+        if is_published:
+            version = WorkflowVersionRepository.set_published(int(version["id"]), int(version["lock_version"]), True)
         return {"workflow": workflow, "version": version}

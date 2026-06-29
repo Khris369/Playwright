@@ -22,14 +22,17 @@ class WorkflowResponse(BaseModel):
 
 
 class WorkflowVersionCreate(BaseModel):
-    version_number: int = Field(ge=1)
-    is_published: bool = False
-    definition_json: dict[str, Any]
+    base_version_id: int | None = Field(default=None, ge=1)
+    definition_json: dict[str, Any] | None = None
 
 
 class WorkflowVersionUpdate(BaseModel):
-    is_published: bool = False
     definition_json: dict[str, Any]
+    expected_lock_version: int = Field(ge=0)
+
+
+class WorkflowVersionLockRequest(BaseModel):
+    expected_lock_version: int = Field(ge=0)
 
 
 class WorkflowVersionResponse(BaseModel):
@@ -38,4 +41,6 @@ class WorkflowVersionResponse(BaseModel):
     version_number: int
     is_published: bool
     definition_json: dict[str, Any]
+    lock_version: int
     created_at: datetime | None = None
+    updated_at: datetime | None = None

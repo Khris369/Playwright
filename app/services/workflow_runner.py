@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.engine.steps import StepExecutionError, execute_step
+from app.engine.executor import StepExecutionError, execute_step
+from app.engine.graph import GraphValidationError, compile_definition
 from app.engine.template import resolve_value
-from app.services.workflow_repository import WorkflowRepository
+from app.services.workflow_version_repository import WorkflowVersionRepository
 from app.services.workflow_run_repository import WorkflowRunRepository
 
 
@@ -27,14 +28,19 @@ def _parse_bool(value: Any, default: bool) -> bool:
 class WorkflowRunnerService:
     @staticmethod
     def run_workflow_version(version_id: int, inputs: dict[str, Any] | None = None) -> int:
-        version = WorkflowRepository.get_workflow_version(version_id)
+        version = WorkflowVersionRepository.get(version_id)
         if version is None:
             raise ValueError("workflow_version_not_found")
 
+        try:
+            compiled = compile_definition(version["definition_json"])
+        except GraphValidationError as exc:
+            raise ValueError("invalid_workflow_definition") from exc
         workflow_id = int(version["workflow_id"])
         run_id = WorkflowRunRepository.create_queued_run(
             workflow_id=workflow_id,
             workflow_version_id=version_id,
+            resolved_definition={"schema_version": 2, "steps": compiled},
             inputs=inputs or {},
         )
         return run_id
@@ -45,14 +51,7 @@ class WorkflowRunnerService:
         if run is None:
             raise ValueError("workflow_run_not_found")
 
-        version = WorkflowRepository.get_workflow_version(int(run["workflow_version_id"]))
-        if version is None:
-            WorkflowRunRepository.finalize_run(
-                run_id, status="failed", error_summary="workflow_version_not_found"
-            )
-            return
-
-        definition = version["definition_json"] or {}
+        definition = run.get("resolved_definition_json") or {}
         steps = definition.get("steps", [])
         if not isinstance(steps, list):
             WorkflowRunRepository.finalize_run(
@@ -72,7 +71,6 @@ class WorkflowRunnerService:
             headless = _parse_bool(inputs.get("headless"), headless_default)
             if "headed" in inputs:
                 headless = not _parse_bool(inputs.get("headed"), True)
-            headless = False
             slow_mo = int(inputs.get("slow_mo_ms", 0))
 
             with sync_playwright() as p:
@@ -121,7 +119,5 @@ class WorkflowRunnerService:
             WorkflowRunRepository.finalize_run(run_id, status="passed")
             return
         except Exception as exc:
-            WorkflowRunRepository.finalize_run(
-                run_id, status="failed", error_summary=f"runner_error: {exc}"
-            )
+            WorkflowRunRepository.finalize_run(run_id, status="failed", error_summary="runner_error")
             return

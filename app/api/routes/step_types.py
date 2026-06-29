@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter
 
 from app.schemas.step_type import StepTypeResponse
-from app.services.step_type_repository import StepTypeRepository
+from app.engine.registry import public_step_types
 
 router = APIRouter(prefix="/step-types", tags=["step-types"])
 
 
 @router.get("", response_model=list[StepTypeResponse])
-def list_step_types(active_only: bool = Query(default=True)) -> list[StepTypeResponse]:
-    rows = StepTypeRepository.list_step_types(active_only=active_only)
+def list_step_types() -> list[StepTypeResponse]:
+    rows = public_step_types()
     return [StepTypeResponse(**row) for row in rows]

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Query, status
 
 from app.schemas.workflow_run import (
     WorkflowRunCreate,
@@ -13,6 +13,14 @@ from app.services.workflow_run_repository import WorkflowRunRepository
 from app.services.workflow_runner import WorkflowRunnerService
 
 router = APIRouter(prefix="/workflow-runs", tags=["workflow-runs"])
+
+
+@router.get("", response_model=list[WorkflowRunResponse])
+def list_workflow_runs(
+    workflow_version_id: int | None = Query(default=None, ge=1),
+    limit: int = Query(default=20, ge=1, le=100),
+) -> list[WorkflowRunResponse]:
+    return [WorkflowRunResponse(**row) for row in WorkflowRunRepository.list_runs(workflow_version_id, limit)]
 
 
 @router.post("", response_model=WorkflowRunResponse, status_code=status.HTTP_201_CREATED)

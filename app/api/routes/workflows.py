@@ -8,8 +8,11 @@ from app.schemas.workflow import (
     WorkflowVersionCreate,
     WorkflowVersionResponse,
     WorkflowVersionUpdate,
+    WorkflowVersionLockRequest,
 )
+from app.engine.graph import GraphValidationError
 from app.services.workflow_repository import WorkflowRepository
+from app.services.workflow_version_repository import WorkflowVersionRepository, VersionConflictError
 
 router = APIRouter(prefix="/workflows", tags=["workflows"])
 
@@ -45,25 +48,29 @@ def create_workflow_version(
     workflow_id: int, payload: WorkflowVersionCreate
 ) -> WorkflowVersionResponse:
     try:
-        row = WorkflowRepository.create_workflow_version(workflow_id, payload)
+        row = WorkflowVersionRepository.create(workflow_id, payload)
     except ValueError as exc:
         if str(exc) == "workflow_not_found":
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Workflow not found"
             ) from exc
+        if str(exc) == "base_version_not_found":
+            raise HTTPException(status_code=404, detail="Base version not found") from exc
         raise
+    except GraphValidationError as exc:
+        raise HTTPException(status_code=422, detail={"code": "invalid_definition", "errors": [i.as_dict() for i in exc.issues]}) from exc
     return WorkflowVersionResponse(**row)
 
 
 @router.get("/{workflow_id}/versions", response_model=list[WorkflowVersionResponse])
 def list_workflow_versions(workflow_id: int) -> list[WorkflowVersionResponse]:
-    rows = WorkflowRepository.list_workflow_versions(workflow_id)
+    rows = WorkflowVersionRepository.list(workflow_id)
     return [WorkflowVersionResponse(**row) for row in rows]
 
 
 @router.get("/versions/{version_id}", response_model=WorkflowVersionResponse)
 def get_workflow_version(version_id: int) -> WorkflowVersionResponse:
-    row = WorkflowRepository.get_workflow_version(version_id)
+    row = WorkflowVersionRepository.get(version_id)
     if row is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Workflow version not found"
@@ -75,12 +82,39 @@ def get_workflow_version(version_id: int) -> WorkflowVersionResponse:
 def update_workflow_version(
     version_id: int, payload: WorkflowVersionUpdate
 ) -> WorkflowVersionResponse:
-    row = WorkflowRepository.update_workflow_version(version_id, payload)
+    try:
+        row = WorkflowVersionRepository.update(version_id, payload)
+    except VersionConflictError as exc:
+        raise HTTPException(status_code=409, detail={"code": exc.code, "current_lock_version": exc.current_lock_version}) from exc
+    except GraphValidationError as exc:
+        raise HTTPException(status_code=422, detail={"code": "invalid_definition", "errors": [i.as_dict() for i in exc.issues]}) from exc
     if row is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Workflow version not found"
         )
     return WorkflowVersionResponse(**row)
+
+
+def _set_published(version_id: int, payload: WorkflowVersionLockRequest, published: bool) -> WorkflowVersionResponse:
+    try:
+        row = WorkflowVersionRepository.set_published(version_id, payload.expected_lock_version, published)
+    except VersionConflictError as exc:
+        raise HTTPException(status_code=409, detail={"code": exc.code, "current_lock_version": exc.current_lock_version}) from exc
+    except GraphValidationError as exc:
+        raise HTTPException(status_code=422, detail={"code": "invalid_definition", "errors": [i.as_dict() for i in exc.issues]}) from exc
+    if row is None:
+        raise HTTPException(status_code=404, detail="Workflow version not found")
+    return WorkflowVersionResponse(**row)
+
+
+@router.post("/versions/{version_id}/publish", response_model=WorkflowVersionResponse)
+def publish_workflow_version(version_id: int, payload: WorkflowVersionLockRequest) -> WorkflowVersionResponse:
+    return _set_published(version_id, payload, True)
+
+
+@router.post("/versions/{version_id}/unpublish", response_model=WorkflowVersionResponse)
+def unpublish_workflow_version(version_id: int, payload: WorkflowVersionLockRequest) -> WorkflowVersionResponse:
+    return _set_published(version_id, payload, False)
 
 
 @router.delete("/{workflow_id}", status_code=status.HTTP_204_NO_CONTENT)

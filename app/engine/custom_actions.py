@@ -5,6 +5,15 @@ from pathlib import Path
 from typing import Any
 
 
+def execute_custom_action(action: str, args: dict[str, Any], state: dict[str, Any]) -> str:
+    raise RuntimeError("Custom actions are not supported; use a registered step type")
+
+
+'''Legacy custom-action implementation retained as inert source text until the
+next repository history cleanup. Arbitrary actions and scenario file loading
+are not executable.
+
+
 def _xpath_literal(value: str) -> str:
     if "'" not in value:
         return f"'{value}'"
@@ -272,3 +281,4 @@ def execute_custom_action(action: str, args: dict[str, Any], state: dict[str, An
             f"Unsupported custom action: {action}. Supported actions: {supported}"
         )
     return runner()
+'''
