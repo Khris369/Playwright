@@ -43,6 +43,10 @@ function fromDisplayNumber(path: string, value: string): number | undefined {
   return isSecondsTimeoutField(path) ? Math.round(parsed * 1000) : parsed
 }
 
+function fieldLabel(path: string): string {
+  return isSecondsTimeoutField(path) ? 'Timeout (seconds)' : path
+}
+
 function LocatorTargetFields({ value, disabled, onChange, prefix = '' }: { value: LocatorValue; disabled: boolean; onChange: (value: LocatorValue) => void; prefix?: string }) {
   const strategy = String(value.strategy ?? 'label')
   const changeStrategy = (next: string) => {
@@ -114,7 +118,7 @@ export function Inspector({ node, stepType, readOnly, onChange }: Props) {
   const changeArg = (key: string, value: unknown) => onChange({ ...node.data, args: { ...args, [key]: value } })
   return <aside className="inspector">
     <h2>{stepType?.name ?? node.data.step_type}</h2><p>{stepType?.description}</p>
-    {fields.map((field) => <label key={field.path}>{field.path}
+    {fields.map((field) => <label key={field.path}>{fieldLabel(field.path)}
       {field.widget === 'ticket-fields' ? <TicketFields disabled={readOnly} value={args[field.path]} onChange={(value) => changeArg(field.path, value)}/>
         : field.widget === 'locator' ? <LocatorEditor disabled={readOnly} value={args[field.path]} onChange={(value) => changeArg(field.path, value)}/>
           : field.widget === 'select-option' ? <SelectOptionEditor disabled={readOnly} value={args[field.path]} onChange={(value) => changeArg(field.path, value)}/>
