@@ -10,3 +10,4 @@ editor/node_modules/
 editor/*.tsbuildinfo
 editor/vite.config.js
 editor/vite.config.d.ts
+.tokensave
