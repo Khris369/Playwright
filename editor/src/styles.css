@@ -188,6 +188,12 @@ header a {
     background: white;
     box-shadow: 0 2px 8px #1820331c;
     padding: 10px;
+    cursor: grab;
+    touch-action: none;
+}
+
+.workflow-node:active {
+    cursor: grabbing;
 }
 
 .workflow-node.selected {
@@ -225,6 +231,13 @@ header a {
     color: #b42318;
     font-size: 10px;
     white-space: normal;
+}
+
+.workflow-handle {
+    width: 16px !important;
+    height: 16px !important;
+    border: 2px solid #fff;
+    background: #2a3f6c;
 }
 
 .run-state {
@@ -360,3 +373,7 @@ header a {
         grid-template-columns: 1fr;
     }
 }
+.assistant-panel textarea { width: 100%; box-sizing: border-box; margin: .5rem 0; }
+.assistant-panel > p { color: var(--muted); }
+.assistant-response { margin-top: .75rem; border-top: 1px solid var(--border); padding-top: .75rem; }
+.assistant-response pre { white-space: pre-wrap; max-height: 12rem; overflow: auto; }

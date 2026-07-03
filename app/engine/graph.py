@@ -37,11 +37,13 @@ class Viewport(Position):
 
 class Node(GraphModel):
     id: str
-    kind: Literal["start", "step", "comment"]
+    kind: Literal["start", "step", "if", "loop", "comment"]
     position: Position
     step_type: str | None = None
     args: dict[str, Any] = Field(default_factory=dict)
     text: str | None = Field(default=None, max_length=10_000)
+    source_handle: Literal["top", "right", "bottom", "left"] | None = None
+    target_handle: Literal["top", "right", "bottom", "left"] | None = None
 
     @field_validator("id")
     @classmethod
@@ -54,6 +56,7 @@ class Edge(GraphModel):
     id: str
     source: str
     target: str
+    branch: Literal["true", "false", "body", "done"] | None = None
 
     @field_validator("id", "source", "target")
     @classmethod
@@ -129,7 +132,7 @@ def compile_definition(raw: dict[str, Any]) -> list[dict[str, Any]]:
     if len(starts) != 1:
         issues.append(GraphIssue("start_count", "Definition requires exactly one start node"))
 
-    executable = {node.id for node in nodes if node.kind in {"start", "step"}}
+    executable = {node.id for node in nodes if node.kind in {"start", "step", "if", "loop"}}
     incoming: dict[str, list[Edge]] = {node_id: [] for node_id in executable}
     outgoing: dict[str, list[Edge]] = {node_id: [] for node_id in executable}
     for edge in edges:
@@ -139,24 +142,41 @@ def compile_definition(raw: dict[str, Any]) -> list[dict[str, Any]]:
         if by_id[edge.source].kind == "comment" or by_id[edge.target].kind == "comment":
             issues.append(GraphIssue("comment_edge", "Comment nodes must remain disconnected", edge_id=edge.id))
             continue
+        if edge.source == edge.target:
+            issues.append(GraphIssue("self_connection", "A node cannot connect to itself", node_id=edge.source, edge_id=edge.id))
+            continue
         outgoing[edge.source].append(edge)
         incoming[edge.target].append(edge)
     for node_id in executable:
-        if len(outgoing[node_id]) > 1:
+        node = by_id[node_id]
+        if node.kind in {"start", "step"} and len(outgoing[node_id]) > 1:
             issues.append(GraphIssue("branch", "Execution path cannot branch", node_id=node_id))
-        if len(incoming[node_id]) > 1:
-            issues.append(GraphIssue("join", "Execution path cannot join", node_id=node_id))
+        if node.kind != "loop" and len(incoming[node_id]) > 1:
+            issues.append(GraphIssue("join", "Execution paths cannot join", node_id=node_id))
+        if node.kind == "if":
+            labels = [edge.branch for edge in outgoing[node_id]]
+            if sorted(str(label) for label in labels) != ["false", "true"]:
+                issues.append(GraphIssue("if_branches", "If requires exactly one true and one false connection", node_id=node_id))
+        if node.kind == "loop":
+            labels = [edge.branch for edge in outgoing[node_id]]
+            if sorted(str(label) for label in labels) != ["body", "done"]:
+                issues.append(GraphIssue("loop_branches", "Loop requires exactly one body and one done connection", node_id=node_id))
     if starts and incoming.get(starts[0].id):
         issues.append(GraphIssue("start_incoming", "Start node cannot have incoming edges", node_id=starts[0].id))
 
     compiled: list[dict[str, Any]] = []
     visited: set[str] = set()
     available_state: set[str] = set()
-    current = starts[0].id if len(starts) == 1 else None
-    while current is not None:
+    visiting: set[str] = set()
+
+    def visit(current: str) -> None:
+        if current in visiting:
+            if by_id[current].kind != "loop":
+                issues.append(GraphIssue("cycle", "Cycles must return to a Loop node", node_id=current))
+            return
         if current in visited:
-            issues.append(GraphIssue("cycle", "Execution path cannot contain a cycle", node_id=current))
-            break
+            return
+        visiting.add(current)
         visited.add(current)
         node = by_id[current]
         if node.kind == "step":
@@ -170,12 +190,25 @@ def compile_definition(raw: dict[str, Any]) -> list[dict[str, Any]]:
                     if missing_state:
                         issues.append(GraphIssue("missing_state", f"Step requires state: {', '.join(sorted(missing_state))}", node_id=node.id))
                     available_state.update(definition_item.provides)
-                    compiled.append({"id": node.id, "type": node.step_type, "args": validated_args.model_dump(mode="json")})
+                    compiled.append({"id": node.id, "type": node.step_type, "args": validated_args.model_dump(mode="json"), "next": outgoing[node.id][0].target if len(outgoing[node.id]) == 1 else None})
                 except ValidationError as exc:
                     message = exc.errors(include_url=False, include_context=False)[0]["msg"]
                     issues.append(GraphIssue("invalid_args", f"Invalid step arguments: {message}", node_id=node.id))
-        next_edges = outgoing.get(current, [])
-        current = next_edges[0].target if len(next_edges) == 1 else None
+        elif node.kind in {"if", "loop"}:
+            state_key = node.args.get("state_key")
+            operator = node.args.get("operator")
+            if not isinstance(state_key, str) or len(state_key) > 200 or operator not in {"equals", "not_equals", "contains", "truthy", "falsy"}:
+                issues.append(GraphIssue("invalid_args", "Control node requires a valid state_key and operator", node_id=node.id))
+            max_iterations = node.args.get("max_iterations", 10)
+            if node.kind == "loop" and (not isinstance(max_iterations, int) or isinstance(max_iterations, bool) or not 1 <= max_iterations <= 1000):
+                issues.append(GraphIssue("invalid_args", "Loop max_iterations must be between 1 and 1000", node_id=node.id))
+            compiled.append({"id": node.id, "type": f"__{node.kind}__", "args": node.args, "branches": {str(edge.branch): edge.target for edge in outgoing[node.id]}})
+        for next_edge in outgoing.get(current, []):
+            visit(next_edge.target)
+        visiting.remove(current)
+
+    if len(starts) == 1:
+        visit(starts[0].id)
 
     disconnected = executable - visited
     for node_id in sorted(disconnected):

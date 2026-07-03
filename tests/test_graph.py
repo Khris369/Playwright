@@ -11,6 +11,8 @@ def node(kind: str, *, step_type: str | None = None, args: dict | None = None) -
     value = {"id": str(uuid.uuid4()), "kind": kind, "position": {"x": 0, "y": 0}}
     if step_type:
         value.update(step_type=step_type, args=args or {})
+    elif args is not None:
+        value["args"] = args
     return value
 
 
@@ -72,3 +74,24 @@ def test_definition_size_limit() -> None:
     with pytest.raises(GraphValidationError) as exc:
         compile_definition(definition([start, comment], []))
     assert exc.value.issues[0].code == "definition_too_large"
+
+
+def test_rejects_self_connections() -> None:
+    start = node("start")
+    result = validate_definition(definition([start], [edge(start, start)]))
+    assert any(item["code"] == "self_connection" for item in result["errors"])
+
+
+def test_compiles_if_and_bounded_loop_control_flow() -> None:
+    start = node("start")
+    conditional = node("if", args={"state_key": "current_url", "operator": "contains", "value": "example"})
+    loop = node("loop", args={"state_key": "finished", "operator": "truthy", "max_iterations": 3})
+    body = node("step", step_type="wait_timeout", args={"timeout_ms": 1})
+    done = node("step", step_type="wait_timeout", args={"timeout_ms": 1})
+    false_done = node("step", step_type="wait_timeout", args={"timeout_ms": 1})
+    links = [edge(start, conditional), edge(conditional, loop), edge(conditional, false_done), edge(loop, body), edge(loop, done), edge(body, loop)]
+    links[1]["branch"] = "true"; links[2]["branch"] = "false"
+    links[3]["branch"] = "body"; links[4]["branch"] = "done"
+    compiled = compile_definition(definition([start, conditional, loop, body, done, false_done], links))
+    controls = {item["type"] for item in compiled if item["type"].startswith("__")}
+    assert controls == {"__if__", "__loop__"}

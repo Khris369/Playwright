@@ -25,6 +25,22 @@ def _parse_bool(value: Any, default: bool) -> bool:
     return default
 
 
+def _condition_matches(args: dict[str, Any], state: dict[str, Any], inputs: dict[str, Any]) -> bool:
+    key = str(args.get("state_key", ""))
+    actual = inputs.get(key.removeprefix("inputs.")) if key.startswith("inputs.") else state.get(key)
+    expected = args.get("value")
+    operator = args.get("operator")
+    if operator == "truthy":
+        return bool(actual)
+    if operator == "falsy":
+        return not bool(actual)
+    if operator == "not_equals":
+        return actual != expected
+    if operator == "contains":
+        return str(expected) in str(actual or "")
+    return actual == expected
+
+
 class WorkflowRunnerService:
     @staticmethod
     def run_workflow_version(version_id: int, inputs: dict[str, Any] | None = None) -> int:
@@ -79,17 +95,41 @@ class WorkflowRunnerService:
                 page = context_pw.new_page()
                 state["page"] = page
 
-                for idx, step in enumerate(steps):
+                by_id = {str(step.get("id")): step for step in steps}
+                current_id = str(steps[0].get("id")) if steps else None
+                loop_counts: dict[str, int] = {}
+                execution_index = 0
+                while current_id is not None:
+                    if execution_index >= 10_000:
+                        raise StepExecutionError("Workflow exceeded the 10,000 node execution safety limit")
+                    step = by_id.get(current_id)
+                    if step is None:
+                        raise StepExecutionError("Workflow points to an unknown node")
                     step_type = str(step.get("type", ""))
                     raw_args = step.get("args", {}) or {}
                     step_id = step.get("id")
                     args = resolve_value(raw_args, context)
 
                     try:
-                        result = execute_step(step_type, args, state)
+                        if step_type in {"__if__", "__loop__"}:
+                            matched = _condition_matches(args, state, inputs)
+                            if step_type == "__if__":
+                                branch = "true" if matched else "false"
+                            else:
+                                count = loop_counts.get(current_id, 0)
+                                maximum = int(args.get("max_iterations", 10))
+                                branch = "done" if matched or count >= maximum else "body"
+                                if branch == "body":
+                                    loop_counts[current_id] = count + 1
+                            next_id = (step.get("branches") or {}).get(branch)
+                            from app.engine.executor import StepResult
+                            result = StepResult(f"Control condition selected {branch}")
+                        else:
+                            result = execute_step(step_type, args, state)
+                            next_id = step.get("next")
                         WorkflowRunRepository.create_step_run(
                             workflow_run_id=run_id,
-                            step_index=idx,
+                            step_index=execution_index,
                             step_id=str(step_id) if step_id is not None else None,
                             step_type=step_type,
                             status="passed",
@@ -99,7 +139,7 @@ class WorkflowRunnerService:
                     except (KeyError, StepExecutionError, ValueError) as exc:
                         WorkflowRunRepository.create_step_run(
                             workflow_run_id=run_id,
-                            step_index=idx,
+                            step_index=execution_index,
                             step_id=str(step_id) if step_id is not None else None,
                             step_type=step_type,
                             status="failed",
@@ -112,6 +152,8 @@ class WorkflowRunnerService:
                         context_pw.close()
                         browser.close()
                         return
+                    execution_index += 1
+                    current_id = str(next_id) if next_id is not None else None
 
                 context_pw.close()
                 browser.close()

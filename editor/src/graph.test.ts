@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { arrange, blankGraph, fromDefinition, linearOrder, rewireOrder, toDefinition } from './graph'
+import { arrange, blankGraph, fromDefinition, isValidConnection, linearOrder, rewireOrder, toDefinition } from './graph'
 import type { GraphNode } from './types'
 
 describe('graph utilities', () => {
@@ -18,5 +18,10 @@ describe('graph utilities', () => {
 
   it('rewires a reordered linear fallback', () => {
     expect(rewireOrder(['start', 'b', 'a']).map((edge) => [edge.source, edge.target])).toEqual([['start', 'b'], ['b', 'a']])
+  })
+
+  it('rejects a connection from a node to itself', () => {
+    expect(isValidConnection({ source: 'a', target: 'a' })).toBe(false)
+    expect(isValidConnection({ source: 'a', target: 'b' })).toBe(true)
   })
 })
