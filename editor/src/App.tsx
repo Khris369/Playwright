@@ -32,6 +32,8 @@ export default function App() {
   const [past, setPast] = useState<Snapshot[]>([])
   const [future, setFuture] = useState<Snapshot[]>([])
   const [jsonImport, setJsonImport] = useState('')
+  const [assistantOpen, setAssistantOpen] = useState(false)
+  const [jsonOpen, setJsonOpen] = useState(false)
   const [contextMenu, setContextMenu] = useState<{ kind: 'node'; nodeId: string; x: number; y: number } | { kind: 'edge'; edgeId: string; x: number; y: number } | null>(null)
   const copied = useRef<GraphNode | undefined>(undefined)
   const reconnectSucceeded = useRef(true)
@@ -64,6 +66,13 @@ export default function App() {
     }
   }), [nodes, edges])
   const definitionKey = JSON.stringify(definition)
+  const sequenceNodes = useMemo(() => {
+    const ordered = linearOrder(nodes, edges)
+    const seen = new Set(ordered)
+    return [...ordered, ...nodes.filter((node) => node.data.kind !== 'comment' && !seen.has(node.id)).map((node) => node.id)]
+      .map((id) => nodes.find((node) => node.id === id))
+      .filter((node): node is GraphNode => Boolean(node))
+  }, [nodes, edges])
   // Node coordinates do not affect execution. Excluding them prevents a validation
   // request (and abort race) for every frame while a node is being dragged.
   const validationKey = JSON.stringify({
@@ -256,11 +265,13 @@ export default function App() {
   }
 
   return <main className="app-shell">
-    <header><a href="/ui">Dashboard</a><h1>Workflow editor</h1><nav className="editor-tabs" aria-label="Editor sections"><span className="editor-tab is-active" aria-current="page">Editor</span><button className="editor-tab" type="button" disabled={!canOpenRuns} title={canOpenRuns ? 'Open the dashboard Runs tab for the current workflow and version.' : 'Load a workflow and version first.'} onClick={() => { window.location.href = runsUrl }}>Runs</button></nav><select value={version?.id ?? ''} onChange={(e) => { const next = versions.find((item) => item.id === Number(e.target.value)); if (next && (!dirty || confirm('Discard unsaved changes?'))) loadVersion(next) }}>{versions.map((item) => <option value={item.id} key={item.id}>v{item.version_number}{item.is_published ? ' · published' : ' · draft'}</option>)}</select><button onClick={createVersion}>New version</button><button onClick={togglePublished} disabled={!version || (!version.is_published && !validation.valid)}>{version?.is_published ? 'Unpublish' : 'Publish'}</button><button onClick={save} disabled={readOnly || !dirty || !validation.valid}>Save</button><span>{message}</span></header>
+    <header><a href="/ui">Dashboard</a><h1>Workflow editor</h1><nav className="editor-tabs" aria-label="Editor sections"><span className="editor-tab is-active" aria-current="page">Editor</span><button className="editor-tab" type="button" disabled={!canOpenRuns} title={canOpenRuns ? 'Open the dashboard Runs tab for the current workflow and version.' : 'Load a workflow and version first.'} onClick={() => { window.location.href = runsUrl }}>Runs</button></nav><button type="button" aria-expanded={assistantOpen} onClick={() => setAssistantOpen((open) => !open)}>Assistant</button><select value={version?.id ?? ''} onChange={(e) => { const next = versions.find((item) => item.id === Number(e.target.value)); if (next && (!dirty || confirm('Discard unsaved changes?'))) loadVersion(next) }}>{versions.map((item) => <option value={item.id} key={item.id}>v{item.version_number}{item.is_published ? ' · published' : ' · draft'}</option>)}</select><button onClick={createVersion}>New version</button><button onClick={togglePublished} disabled={!version || (!version.is_published && !validation.valid)}>{version?.is_published ? 'Unpublish' : 'Publish'}</button><button onClick={save} disabled={readOnly || !dirty || !validation.valid}>Save</button><span>{message}</span></header>
+    {assistantOpen && <div className="assistant-drawer"><AssistantPanel workflowId={workflowId || undefined} versionId={version?.id} definition={definition} stepTypes={stepTypes} disabled={readOnly} onApply={applyAssistantSteps} onClose={() => setAssistantOpen(false)} /></div>}
     <div className="toolbar"><button disabled={!past.length || readOnly} onClick={undo}>Undo</button><button disabled={!future.length || readOnly} onClick={redo}>Redo</button><button disabled={readOnly} onClick={() => commit(arrange(nodes, edges))}>Arrange</button><button disabled={!selected || readOnly} onClick={duplicate}>Duplicate</button><span className={validation.valid ? 'valid' : 'error'}>{validation.valid ? `${validation.compiled_order.length} steps · valid` : `${validation.errors.length} validation errors`}</span></div>
     <div className="workspace">
       <Palette stepTypes={stepTypes} disabled={readOnly} onAdd={addStep} onControl={addControl} onComment={addComment}/>
       <section className="canvas" ref={reactFlowWrapper}>
+        <aside className="sequence-rail" aria-label="Workflow sequence"><h2>Sequence</h2><ol>{sequenceNodes.map((node, index) => <li key={node.id} className={selectedId === node.id ? 'is-selected' : ''}><button type="button" title={`Focus ${node.data.title ?? node.data.step_type ?? node.data.kind}`} onClick={() => { setSelectedId(node.id); reactFlowInstance.current?.fitView({ nodes: [{ id: node.id }], padding: 1.5, duration: 250, maxZoom: 1.2 }) }}><span>{index + 1}</span><small>{node.data.kind === 'start' ? 'Start' : node.data.title ?? node.data.step_type ?? node.data.kind}</small></button>{index > 0 && <div><button aria-label={`Move ${index + 1} up`} disabled={readOnly || index <= 1} onClick={() => moveLinear(node.id, -1)}>↑</button><button aria-label={`Move ${index + 1} down`} disabled={readOnly || index === sequenceNodes.length - 1} onClick={() => moveLinear(node.id, 1)}>↓</button></div>}</li>)}</ol></aside>
         <ReactFlow
           nodes={renderedNodes}
           edges={renderedEdges}
@@ -306,9 +317,6 @@ export default function App() {
       </section>
       <Inspector node={selected} stepType={selectedType} readOnly={readOnly} onChange={updateSelected}/>
     </div>
-    <section className="bottom-panels"><details><summary>Accessible linear editor</summary><ol>{linearOrder(nodes, edges).map((id, index) => { const node = nodes.find((item) => item.id === id)!; return <li key={id}>{node.data.kind === 'start' ? 'Start' : node.data.title ?? node.data.step_type}<button disabled={readOnly || index <= 1} onClick={() => moveLinear(id, -1)}>Move up</button><button disabled={readOnly || index === linearOrder(nodes, edges).length - 1} onClick={() => moveLinear(id, 1)}>Move down</button></li> })}</ol></details>
-      <details><summary>Definition JSON preview / validated import</summary><textarea aria-label="Definition JSON" value={jsonImport || JSON.stringify(definition, null, 2)} onChange={(e) => setJsonImport(e.target.value)}/><button disabled={readOnly} onClick={importDefinition}>Import and validate</button></details>
-      <AssistantPanel workflowId={workflowId || undefined} versionId={version?.id} definition={definition} stepTypes={stepTypes} disabled={readOnly} onApply={applyAssistantSteps} />
-    </section>
+    <section className={`bottom-panels ${jsonOpen ? 'is-expanded' : ''}`}><details open={jsonOpen} onToggle={(event) => setJsonOpen(event.currentTarget.open)}><summary>Definition JSON preview / validated import</summary><div className="json-panel-content"><textarea aria-label="Definition JSON" value={jsonImport || JSON.stringify(definition, null, 2)} onChange={(e) => setJsonImport(e.target.value)}/><button disabled={readOnly} onClick={importDefinition}>Import and validate</button></div></details></section>
   </main>
 }
