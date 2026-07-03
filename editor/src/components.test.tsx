@@ -45,6 +45,7 @@ describe('editor components', () => {
     const node: GraphNode = { id: 'timeout', type: 'workflow', position: { x: 0, y: 0 }, data: { kind: 'step', step_type: 'wait_timeout', args: { timeout_ms: 1000 } } }
     const change = vi.fn()
     render(<Inspector node={node} stepType={timeout} readOnly={false} onChange={change}/>)
+    expect(screen.getByText('Seconds')).toBeInTheDocument()
     const input = screen.getByDisplayValue('1')
     expect(input).toHaveAttribute('type', 'number')
     fireEvent.change(input, { target: { value: '2.5' } })

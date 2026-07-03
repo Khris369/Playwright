@@ -30,6 +30,10 @@ function isSecondsTimeoutField(path: string): boolean {
   return path === 'timeout_ms'
 }
 
+function getFieldLabel(path: string): string {
+  return isSecondsTimeoutField(path) ? 'Seconds' : path
+}
+
 function toDisplayNumber(path: string, value: unknown): string {
   if (value === undefined || value === null || value === '') return ''
   if (typeof value !== 'number' || Number.isNaN(value)) return String(value)
@@ -114,7 +118,7 @@ export function Inspector({ node, stepType, readOnly, onChange }: Props) {
   const changeArg = (key: string, value: unknown) => onChange({ ...node.data, args: { ...args, [key]: value } })
   return <aside className="inspector">
     <h2>{stepType?.name ?? node.data.step_type}</h2><p>{stepType?.description}</p>
-    {fields.map((field) => <label key={field.path}>{field.path}
+    {fields.map((field) => <label key={field.path}>{getFieldLabel(field.path)}
       {field.widget === 'ticket-fields' ? <TicketFields disabled={readOnly} value={args[field.path]} onChange={(value) => changeArg(field.path, value)}/>
         : field.widget === 'locator' ? <LocatorEditor disabled={readOnly} value={args[field.path]} onChange={(value) => changeArg(field.path, value)}/>
           : field.widget === 'select-option' ? <SelectOptionEditor disabled={readOnly} value={args[field.path]} onChange={(value) => changeArg(field.path, value)}/>
