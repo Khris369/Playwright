@@ -1088,14 +1088,14 @@ on("btn-edit-workflow", "click", (event) => {
   window.location.href = editorUrlFor(workflowId);
 });
 
-on("btn-delete-workflow", "click", async () => {
-  try {
-    const workflowId = Number(($("editor-workflow-id") || {}).value);
-    if (!workflowId) {
-      throw new Error("Select a workflow first");
-    }
-    await api(`/workflows/${workflowId}`, { method: "DELETE" });
-    setValueIfPresent("editor-workflow-id", "");
+  on("btn-delete-workflow", "click", async () => {
+    try {
+      const workflowId = Number(($("editor-workflow-id") || $("selected-workflow-id") || {}).value);
+      if (!workflowId) {
+        throw new Error("Select a workflow first");
+      }
+      await api(`/workflows/${workflowId}`, { method: "DELETE" });
+      setValueIfPresent("editor-workflow-id", "");
     setValueIfPresent("selected-workflow-id", "");
     setValueIfPresent("ver-workflow-id", "");
     setValueIfPresent("ver-current-version-id", "");
@@ -1106,14 +1106,15 @@ on("btn-delete-workflow", "click", async () => {
     populateRevisionDropdown([]);
     updateWorkflowInfoPanel(null, null);
     updateVersionPrimaryActions();
-    setValueIfPresent("run-workflow-id", "");
-    setValueIfPresent("run-version-id", "");
-    clearRunMonitorPreview();
-    if ($("workflow-details")) {
-      $("workflow-details").textContent = "";
-    }
-    updateCurrentWorkflowIndicator(null);
-    await refreshWorkflows();
+      setValueIfPresent("run-workflow-id", "");
+      setValueIfPresent("run-version-id", "");
+      clearRunMonitorPreview();
+      setSelectedWorkflowListItem(null);
+      if ($("workflow-details")) {
+        $("workflow-details").textContent = "";
+      }
+      updateCurrentWorkflowIndicator(null);
+      await refreshWorkflows();
     toast(`Workflow #${workflowId} set to inactive`);
   } catch (err) {
     toast(err.message, true);

@@ -61,3 +61,13 @@ export function arrange(nodes: GraphNode[], edges: GraphEdge[]): GraphNode[] {
 export function rewireOrder(order: string[]): GraphEdge[] {
   return order.slice(1).map((target, index) => ({ id: uid(), source: order[index], target }))
 }
+
+export function removeNode(nodes: GraphNode[], edges: GraphEdge[], nodeId: string): { nodes: GraphNode[]; edges: GraphEdge[] } {
+  const node = nodes.find((item) => item.id === nodeId)
+  if (!node || node.data.kind === 'start') return { nodes, edges }
+
+  return {
+    nodes: nodes.filter((item) => item.id !== nodeId),
+    edges: edges.filter((edge) => edge.source !== nodeId && edge.target !== nodeId),
+  }
+}

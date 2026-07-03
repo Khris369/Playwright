@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
 import {
   Background, Controls, MiniMap, ReactFlow, applyEdgeChanges, applyNodeChanges,
   reconnectEdge, type Connection, type EdgeChange, type NodeChange, type OnReconnect,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { api, ApiError } from './api'
-import { arrange, blankGraph, fromDefinition, linearOrder, rewireOrder, toDefinition, uid } from './graph'
+import { arrange, blankGraph, fromDefinition, linearOrder, removeNode, rewireOrder, toDefinition, uid } from './graph'
 import { Inspector } from './Inspector'
 import { Palette } from './Palette'
 import { dashboardRunsUrl } from './navigation'
@@ -30,6 +30,7 @@ export default function App() {
   const [past, setPast] = useState<Snapshot[]>([])
   const [future, setFuture] = useState<Snapshot[]>([])
   const [jsonImport, setJsonImport] = useState('')
+  const [contextMenu, setContextMenu] = useState<{ nodeId: string; x: number; y: number } | null>(null)
   const copied = useRef<GraphNode | undefined>(undefined)
   const reconnectSucceeded = useRef(true)
 
@@ -38,6 +39,7 @@ export default function App() {
   const runsUrl = dashboardRunsUrl(workflowId, version?.id)
   const selected = nodes.find((node) => node.id === selectedId)
   const selectedType = stepTypes.find((step) => step.key === selected?.data.step_type)
+  const contextNode = contextMenu ? nodes.find((node) => node.id === contextMenu.nodeId) : undefined
   const definition = useMemo(() => toDefinition(nodes, edges), [nodes, edges])
   const definitionKey = JSON.stringify(definition)
 
@@ -47,6 +49,17 @@ export default function App() {
   const commit = useCallback((nextNodes: GraphNode[], nextEdges: GraphEdge[] = edges) => {
     checkpoint(); setNodes(nextNodes); setEdges(nextEdges); setDirty(true)
   }, [checkpoint, edges])
+
+  const closeContextMenu = useCallback(() => setContextMenu(null), [])
+
+  const deleteNode = useCallback((nodeId: string) => {
+    if (readOnly) return
+    const next = removeNode(nodes, edges, nodeId)
+    if (next.nodes === nodes && next.edges === edges) return
+    commit(next.nodes, next.edges)
+    if (selectedId === nodeId) setSelectedId(undefined)
+    closeContextMenu()
+  }, [closeContextMenu, commit, edges, nodes, readOnly, selectedId])
 
   useEffect(() => {
     if (!workflowId) { setMessage('Open this editor with ?workflow_id=<id>.'); return }
@@ -110,6 +123,13 @@ export default function App() {
   const onConnect = (connection: Connection) => { if (!readOnly) commit(nodes, [...edges, { ...connection, id: uid(), source: connection.source!, target: connection.target! }]) }
   const onReconnect: OnReconnect<GraphEdge> = (oldEdge, connection) => { reconnectSucceeded.current = true; commit(nodes, reconnectEdge(oldEdge, connection, edges)) }
 
+  const onNodeContextMenu = (event: MouseEvent, node: GraphNode) => {
+    event.preventDefault()
+    if (readOnly) return
+    setSelectedId(node.id)
+    setContextMenu({ nodeId: node.id, x: event.clientX, y: event.clientY })
+  }
+
   const addStep = (step: StepType) => {
     const executable = nodes.filter((node) => node.data.kind !== 'comment')
     const node: GraphNode = { id: uid(), type: 'workflow', position: { x: 80 + executable.length * 280, y: 160 }, data: { kind: 'step', step_type: step.key, args: structuredClone(step.default_args), title: step.name } }
@@ -164,7 +184,40 @@ export default function App() {
   return <main className="app-shell">
     <header><a href="/ui">Dashboard</a><h1>Workflow editor</h1><nav className="editor-tabs" aria-label="Editor sections"><span className="editor-tab is-active" aria-current="page">Editor</span><button className="editor-tab" type="button" disabled={!canOpenRuns} title={canOpenRuns ? 'Open the dashboard Runs tab for the current workflow and version.' : 'Load a workflow and version first.'} onClick={() => { window.location.href = runsUrl }}>Runs</button></nav><select value={version?.id ?? ''} onChange={(e) => { const next = versions.find((item) => item.id === Number(e.target.value)); if (next && (!dirty || confirm('Discard unsaved changes?'))) loadVersion(next) }}>{versions.map((item) => <option value={item.id} key={item.id}>v{item.version_number}{item.is_published ? ' · published' : ' · draft'}</option>)}</select><button onClick={createVersion}>New version</button><button onClick={togglePublished} disabled={!version || (!version.is_published && !validation.valid)}>{version?.is_published ? 'Unpublish' : 'Publish'}</button><button onClick={save} disabled={readOnly || !dirty || !validation.valid}>Save</button><span>{message}</span></header>
     <div className="toolbar"><button disabled={!past.length || readOnly} onClick={undo}>Undo</button><button disabled={!future.length || readOnly} onClick={redo}>Redo</button><button disabled={readOnly} onClick={() => commit(arrange(nodes, edges))}>Arrange</button><button disabled={!selected || readOnly} onClick={duplicate}>Duplicate</button><span className={validation.valid ? 'valid' : 'error'}>{validation.valid ? `${validation.compiled_order.length} steps · valid` : `${validation.errors.length} validation errors`}</span></div>
-    <div className="workspace"><Palette stepTypes={stepTypes} disabled={readOnly} onAdd={addStep} onComment={addComment}/><section className="canvas"><ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} onReconnectStart={() => { reconnectSucceeded.current = false }} onReconnect={onReconnect} onReconnectEnd={(_, edge) => { if (!reconnectSucceeded.current) commit(nodes, edges.filter((item) => item.id !== edge.id)) }} onSelectionChange={({ nodes: selectedNodes }) => setSelectedId(selectedNodes[0]?.id)} onNodeDragStart={checkpoint} fitView deleteKeyCode={readOnly ? null : ['Backspace', 'Delete']}><MiniMap/><Controls/><Background/></ReactFlow></section><Inspector node={selected} stepType={selectedType} readOnly={readOnly} onChange={updateSelected}/></div>
+    <div className="workspace">
+      <Palette stepTypes={stepTypes} disabled={readOnly} onAdd={addStep} onComment={addComment}/>
+      <section className="canvas">
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          nodeTypes={nodeTypes}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          onConnect={onConnect}
+          onReconnectStart={() => { reconnectSucceeded.current = false }}
+          onReconnect={onReconnect}
+          onReconnectEnd={(_, edge) => { if (!reconnectSucceeded.current) commit(nodes, edges.filter((item) => item.id !== edge.id)) }}
+          onSelectionChange={({ nodes: selectedNodes }) => setSelectedId(selectedNodes[0]?.id)}
+          onNodeDragStart={checkpoint}
+          onNodeContextMenu={onNodeContextMenu}
+          onPaneClick={closeContextMenu}
+          onPaneContextMenu={(event) => { event.preventDefault(); closeContextMenu() }}
+          fitView
+          deleteKeyCode={readOnly ? null : ['Backspace', 'Delete']}
+        >
+          <MiniMap/>
+          <Controls/>
+          <Background/>
+        </ReactFlow>
+        {contextMenu && (
+          <div className="node-context-menu" style={{ left: contextMenu.x, top: contextMenu.y }}>
+            <button type="button" disabled={readOnly || contextNode?.data.kind === 'start'} onClick={() => deleteNode(contextMenu.nodeId)}>Delete node</button>
+            <button type="button" onClick={closeContextMenu}>Cancel</button>
+          </div>
+        )}
+      </section>
+      <Inspector node={selected} stepType={selectedType} readOnly={readOnly} onChange={updateSelected}/>
+    </div>
     <section className="bottom-panels"><details><summary>Accessible linear editor</summary><ol>{linearOrder(nodes, edges).map((id, index) => { const node = nodes.find((item) => item.id === id)!; return <li key={id}>{node.data.kind === 'start' ? 'Start' : node.data.title ?? node.data.step_type}<button disabled={readOnly || index <= 1} onClick={() => moveLinear(id, -1)}>Move up</button><button disabled={readOnly || index === linearOrder(nodes, edges).length - 1} onClick={() => moveLinear(id, 1)}>Move down</button></li> })}</ol></details>
       <details><summary>Definition JSON preview / validated import</summary><textarea aria-label="Definition JSON" value={jsonImport || JSON.stringify(definition, null, 2)} onChange={(e) => setJsonImport(e.target.value)}/><button disabled={readOnly} onClick={importDefinition}>Import and validate</button></details></section>
   </main>

@@ -1,42 +1,362 @@
-:root { font-family: Inter, ui-sans-serif, system-ui, sans-serif; color: #182033; background: #f4f6fa; }
-* { box-sizing: border-box; }
-body { margin: 0; }
-button, input, select, textarea { font: inherit; }
-button { border: 1px solid #c9d2e3; border-radius: 6px; background: white; padding: 7px 10px; cursor: pointer; }
-button:disabled { cursor: not-allowed; opacity: .5; }
-.app-shell > header { min-height: 58px; display: flex; align-items: center; gap: 10px; padding: 8px 16px; background: #111a2e; color: white; }
-header h1 { font-size: 18px; margin: 0 auto 0 8px; } header a { color: #b7d4ff; }
-.editor-tabs { display: inline-flex; gap: 6px; margin-left: auto; }
-.editor-tab { border: 1px solid #31405e; border-radius: 999px; background: #17213a; color: #e8efff; padding: 7px 12px; text-decoration: none; font-size: 13px; }
-.editor-tab.is-active { background: #2a3f6c; border-color: #5f88d9; font-weight: 650; }
-.editor-tab:disabled { opacity: .45; }
-.toolbar { height: 44px; display: flex; align-items: center; gap: 8px; padding: 5px 12px; border-bottom: 1px solid #dfe4ed; background: white; }
-.toolbar span { margin-left: auto; } .valid { color: #087a50; } .error { color: #b42318; }
-.workspace { height: calc(100vh - 220px); min-height: 520px; display: grid; grid-template-columns: 230px minmax(400px, 1fr) 330px; }
-.palette, .inspector { overflow: auto; padding: 12px; background: white; }
-.palette { border-right: 1px solid #dfe4ed; } .inspector { border-left: 1px solid #dfe4ed; }
-.palette h2, .inspector h2 { margin: 0 0 10px; font-size: 17px; }
-.palette h3 { font-size: 12px; text-transform: uppercase; color: #667085; margin: 16px 0 6px; }
-.palette input { width: 100%; padding: 8px; }
-.palette section button { display: block; width: 100%; text-align: left; margin: 5px 0; }
-.palette button small { display: block; color: #667085; margin-top: 3px; }
-.canvas { min-width: 0; background: #f8fafc; }
-.workflow-node { width: 210px; min-height: 80px; border: 1px solid #9db0cf; border-radius: 9px; background: white; box-shadow: 0 2px 8px #1820331c; padding: 10px; }
-.workflow-node.selected { outline: 3px solid #6aa2ff66; } .workflow-node.invalid { border-color: #d92d20; } .workflow-node.passed { border-color: #079455; } .workflow-node.failed { border-color: #d92d20; }
-.workflow-node small, .node-error, .run-state { display: block; margin-top: 5px; overflow: hidden; text-overflow: ellipsis; }
-.node-kind { font-size: 10px; text-transform: uppercase; color: #667085; }.node-error { color: #b42318; font-size: 10px; white-space: normal; }.run-state { font-size: 10px; font-weight: 700; }
-.inspector label { display: block; font-size: 12px; font-weight: 650; margin: 12px 0; }
-.inspector input, .inspector select, .inspector textarea { display: block; width: 100%; margin-top: 5px; padding: 7px; border: 1px solid #c9d2e3; border-radius: 5px; }
-.inspector textarea { min-height: 90px; font-family: ui-monospace, monospace; font-size: 12px; }
-.field-hint { display: block; margin-top: 4px; font-size: 11px; font-weight: 500; color: #667085; }
-.ticket-row { padding: 8px; margin: 8px 0; background: #f4f6fa; border-radius: 6px; }
-.locator-editor { padding: 8px; margin-top: 6px; border: 1px solid #d7deea; border-radius: 7px; background: #f8fafc; }
-.locator-editor fieldset { border: 1px solid #c9d2e3; border-radius: 6px; margin-top: 10px; }
-.locator-fields > label, .locator-editor > label, .select-option-editor label { font-weight: 500; }
-.inline-field { display: flex !important; align-items: center; gap: 6px; }
-.inline-field input { display: inline-block; width: auto; margin: 0; }
-.field-help { display: inline-grid; place-items: center; width: 16px; height: 16px; margin-left: 4px; border-radius: 50%; background: #dbe8ff; color: #2459a9; font-size: 11px; cursor: help; }
-.bottom-panels { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 10px 14px; background: white; border-top: 1px solid #dfe4ed; }
-.bottom-panels details { max-height: 105px; overflow: auto; }.bottom-panels textarea { width: 100%; min-height: 180px; font: 11px ui-monospace, monospace; }
-.bottom-panels li button { margin-left: 7px; padding: 2px 6px; }
-@media (max-width: 900px) { .workspace { grid-template-columns: 180px 1fr; }.inspector { position: fixed; right: 0; top: 102px; bottom: 0; width: 310px; z-index: 4; box-shadow: -4px 0 20px #0002; }.bottom-panels { grid-template-columns: 1fr; } }
+:root {
+    font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+    color: #182033;
+    background: #f4f6fa;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+}
+
+button,
+input,
+select,
+textarea {
+    font: inherit;
+}
+
+button {
+    border: 1px solid #c9d2e3;
+    border-radius: 6px;
+    background: white;
+    padding: 7px 10px;
+    cursor: pointer;
+}
+
+button:disabled {
+    cursor: not-allowed;
+    opacity: .5;
+}
+
+.app-shell>header {
+    min-height: 58px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 16px;
+    background: #111a2e;
+    color: white;
+}
+
+header h1 {
+    font-size: 18px;
+    margin: 0 auto 0 8px;
+}
+
+header a {
+    color: #b7d4ff;
+}
+
+.editor-tabs {
+    display: inline-flex;
+    gap: 6px;
+    margin-left: auto;
+}
+
+.editor-tab {
+    border: 1px solid #31405e;
+    border-radius: 999px;
+    background: #17213a;
+    color: #e8efff;
+    padding: 7px 12px;
+    text-decoration: none;
+    font-size: 13px;
+}
+
+.editor-tab.is-active {
+    background: #2a3f6c;
+    border-color: #5f88d9;
+    font-weight: 650;
+}
+
+.editor-tab:disabled {
+    opacity: .45;
+}
+
+.toolbar {
+    height: 44px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 12px;
+    border-bottom: 1px solid #dfe4ed;
+    background: white;
+}
+
+.toolbar span {
+    margin-left: auto;
+}
+
+.valid {
+    color: #087a50;
+}
+
+.error {
+    color: #b42318;
+}
+
+.workspace {
+    height: calc(100vh - 220px);
+    min-height: 520px;
+    display: grid;
+    grid-template-columns: 230px minmax(400px, 1fr) 330px;
+}
+
+.palette,
+.inspector {
+    overflow: auto;
+    padding: 12px;
+    background: white;
+}
+
+.palette {
+    border-right: 1px solid #dfe4ed;
+}
+
+.inspector {
+    border-left: 1px solid #dfe4ed;
+}
+
+.palette h2,
+.inspector h2 {
+    margin: 0 0 10px;
+    font-size: 17px;
+}
+
+.palette h3 {
+    font-size: 12px;
+    text-transform: uppercase;
+    color: #667085;
+    margin: 16px 0 6px;
+}
+
+.palette input {
+    width: 100%;
+    padding: 8px;
+}
+
+.palette section button {
+    display: block;
+    width: 100%;
+    text-align: left;
+    margin: 5px 0;
+}
+
+.palette button small {
+    display: block;
+    color: #667085;
+    margin-top: 3px;
+}
+
+.canvas {
+    position: relative;
+    min-width: 0;
+    background: #f8fafc;
+}
+
+.node-context-menu {
+    position: fixed;
+    z-index: 50;
+    min-width: 160px;
+    padding: 6px;
+    border: 1px solid #d7deea;
+    border-radius: 10px;
+    background: #fff;
+    box-shadow: 0 14px 30px rgba(24, 32, 51, .18);
+    display: grid;
+    gap: 4px;
+}
+
+.node-context-menu button {
+    width: 100%;
+    text-align: left;
+}
+
+.node-context-menu button:first-child {
+    color: #b42318;
+}
+
+.workflow-node {
+    width: 210px;
+    min-height: 80px;
+    border: 1px solid #9db0cf;
+    border-radius: 9px;
+    background: white;
+    box-shadow: 0 2px 8px #1820331c;
+    padding: 10px;
+}
+
+.workflow-node.selected {
+    outline: 3px solid #6aa2ff66;
+}
+
+.workflow-node.invalid {
+    border-color: #d92d20;
+}
+
+.workflow-node.passed {
+    border-color: #079455;
+}
+
+.workflow-node.failed {
+    border-color: #d92d20;
+}
+
+.workflow-node small,
+.node-error,
+.run-state {
+    display: block;
+    margin-top: 5px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.node-kind {
+    font-size: 10px;
+    text-transform: uppercase;
+    color: #667085;
+}
+
+.node-error {
+    color: #b42318;
+    font-size: 10px;
+    white-space: normal;
+}
+
+.run-state {
+    font-size: 10px;
+    font-weight: 700;
+}
+
+.inspector label {
+    display: block;
+    font-size: 12px;
+    font-weight: 650;
+    margin: 12px 0;
+}
+
+.inspector input,
+.inspector select,
+.inspector textarea {
+    display: block;
+    width: 100%;
+    margin-top: 5px;
+    padding: 7px;
+    border: 1px solid #c9d2e3;
+    border-radius: 5px;
+}
+
+.inspector textarea {
+    min-height: 90px;
+    font-family: ui-monospace, monospace;
+    font-size: 12px;
+}
+
+.field-hint {
+    display: block;
+    margin-top: 4px;
+    font-size: 11px;
+    font-weight: 500;
+    color: #667085;
+}
+
+.ticket-row {
+    padding: 8px;
+    margin: 8px 0;
+    background: #f4f6fa;
+    border-radius: 6px;
+}
+
+.locator-editor {
+    padding: 8px;
+    margin-top: 6px;
+    border: 1px solid #d7deea;
+    border-radius: 7px;
+    background: #f8fafc;
+}
+
+.locator-editor fieldset {
+    border: 1px solid #c9d2e3;
+    border-radius: 6px;
+    margin-top: 10px;
+}
+
+.locator-fields>label,
+.locator-editor>label,
+.select-option-editor label {
+    font-weight: 500;
+}
+
+.inline-field {
+    display: flex !important;
+    align-items: center;
+    gap: 6px;
+}
+
+.inline-field input {
+    display: inline-block;
+    width: auto;
+    margin: 0;
+}
+
+.field-help {
+    display: inline-grid;
+    place-items: center;
+    width: 16px;
+    height: 16px;
+    margin-left: 4px;
+    border-radius: 50%;
+    background: #dbe8ff;
+    color: #2459a9;
+    font-size: 11px;
+    cursor: help;
+}
+
+.bottom-panels {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    padding: 10px 14px;
+    background: white;
+    border-top: 1px solid #dfe4ed;
+}
+
+.bottom-panels details {
+    max-height: 105px;
+    overflow: auto;
+}
+
+.bottom-panels textarea {
+    width: 100%;
+    min-height: 180px;
+    font: 11px ui-monospace, monospace;
+}
+
+.bottom-panels li button {
+    margin-left: 7px;
+    padding: 2px 6px;
+}
+
+@media (max-width: 900px) {
+    .workspace {
+        grid-template-columns: 180px 1fr;
+    }
+
+    .inspector {
+        position: fixed;
+        right: 0;
+        top: 102px;
+        bottom: 0;
+        width: 310px;
+        z-index: 4;
+        box-shadow: -4px 0 20px #0002;
+    }
+
+    .bottom-panels {
+        grid-template-columns: 1fr;
+    }
+}
