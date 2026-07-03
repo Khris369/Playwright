@@ -95,3 +95,10 @@ def test_compiles_if_and_bounded_loop_control_flow() -> None:
     compiled = compile_definition(definition([start, conditional, loop, body, done, false_done], links))
     controls = {item["type"] for item in compiled if item["type"].startswith("__")}
     assert controls == {"__if__", "__loop__"}
+
+
+def test_scalar_run_input_template_survives_compile_time_type_validation() -> None:
+    start = node("start")
+    wait = node("step", step_type="wait_timeout", args={"timeout_ms": "{{ inputs.delay_ms }}"})
+    compiled = compile_definition(definition([start, wait], [edge(start, wait)]))
+    assert compiled[0]["args"]["timeout_ms"] == "{{ inputs.delay_ms }}"

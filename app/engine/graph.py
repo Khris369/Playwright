@@ -9,6 +9,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from app.engine.registry import STEP_REGISTRY
+from app.engine.template import TEMPLATE_RE
 
 MAX_DEFINITION_BYTES = 2 * 1024 * 1024
 MAX_NODES = 500
@@ -104,6 +105,19 @@ def _shape_issue(exc: ValidationError) -> GraphIssue:
     return GraphIssue("invalid_shape", f"Invalid definition at {location}: {first['msg']}")
 
 
+def _template_validation_probe(value: Any, default: Any) -> Any:
+    """Replace exact runtime templates with a typed registry default for shape validation."""
+    if isinstance(value, str) and TEMPLATE_RE.match(value):
+        return default
+    if isinstance(value, dict):
+        defaults = default if isinstance(default, dict) else {}
+        return {key: _template_validation_probe(item, defaults.get(key)) for key, item in value.items()}
+    if isinstance(value, list):
+        defaults = default if isinstance(default, list) else []
+        return [_template_validation_probe(item, defaults[index] if index < len(defaults) else None) for index, item in enumerate(value)]
+    return value
+
+
 def compile_definition(raw: dict[str, Any]) -> list[dict[str, Any]]:
     try:
         encoded = json.dumps(raw, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
@@ -185,12 +199,14 @@ def compile_definition(raw: dict[str, Any]) -> list[dict[str, Any]]:
                 issues.append(GraphIssue("unknown_step_type", "Unknown step type", node_id=node.id))
             else:
                 try:
-                    validated_args = definition_item.args_model.model_validate(node.args)
+                    probe_args = _template_validation_probe(node.args, definition_item.default_args)
+                    has_templates = probe_args != node.args
+                    validated_args = definition_item.args_model.model_validate(probe_args)
                     missing_state = definition_item.requires - available_state
                     if missing_state:
                         issues.append(GraphIssue("missing_state", f"Step requires state: {', '.join(sorted(missing_state))}", node_id=node.id))
                     available_state.update(definition_item.provides)
-                    compiled.append({"id": node.id, "type": node.step_type, "args": validated_args.model_dump(mode="json"), "next": outgoing[node.id][0].target if len(outgoing[node.id]) == 1 else None})
+                    compiled.append({"id": node.id, "type": node.step_type, "args": node.args if has_templates else validated_args.model_dump(mode="json"), "next": outgoing[node.id][0].target if len(outgoing[node.id]) == 1 else None})
                 except ValidationError as exc:
                     message = exc.errors(include_url=False, include_context=False)[0]["msg"]
                     issues.append(GraphIssue("invalid_args", f"Invalid step arguments: {message}", node_id=node.id))

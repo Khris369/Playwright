@@ -363,6 +363,10 @@ header a {
     color: #667085;
 }
 
+.argument-field { padding-bottom: 8px; border-bottom: 1px solid #eef1f6; }
+.run-input-control { margin: -5px 0 10px; padding: 7px; border-radius: 6px; background: #f5f8fd; }
+.run-input-control label { margin: 4px 0; font-weight: 500; }
+
 .ticket-row {
     padding: 8px;
     margin: 8px 0;

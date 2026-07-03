@@ -9,6 +9,7 @@ type Props = {
 }
 
 type LocatorValue = Record<string, unknown>
+const RUN_INPUT_TEMPLATE = /^\{\{\s*inputs\.([a-zA-Z0-9_.]+)\s*\}\}$/
 
 const HANDLE_OPTIONS: Array<{ value?: HandleSide; label: string }> = [
   { label: 'Auto' },
@@ -41,6 +42,18 @@ function isNumericField(stepType: StepType | undefined, path: string, value: unk
 
 function isSecondsTimeoutField(path: string): boolean {
   return path === 'timeout_ms'
+}
+
+function getRunInputKey(value: unknown): string | undefined {
+  return typeof value === 'string' ? RUN_INPUT_TEMPLATE.exec(value)?.[1] : undefined
+}
+
+function supportsRunInput(stepType: StepType | undefined, path: string, widget: string, value: unknown): boolean {
+  if (widget === 'locator' || widget === 'select-option' || widget === 'ticket-fields') return false
+  const type = getSchemaProperty(stepType, path)?.type
+  if (typeof type === 'string') return ['string', 'integer', 'number', 'boolean'].includes(type)
+  if (Array.isArray(type)) return type.some((item) => ['string', 'integer', 'number', 'boolean'].includes(String(item)))
+  return ['string', 'number', 'boolean'].includes(typeof value)
 }
 
 function getFieldLabel(path: string): string {
@@ -231,11 +244,11 @@ export function Inspector({ node, stepType, readOnly, onChange }: Props) {
       <p>{stepType?.description}</p>
       <ConnectionSideFields node={node} readOnly={readOnly} onChange={onChange} />
       {fields.map((field) => (
-        <label key={field.path}>
+        <div className="argument-field" key={field.path}><label>
           {getFieldLabel(field.path)}
-          {field.widget === 'ticket-fields' ? <TicketFields disabled={readOnly} value={args[field.path]} onChange={(value) => changeArg(field.path, value)} /> : field.widget === 'locator' ? <LocatorEditor disabled={readOnly} value={args[field.path]} onChange={(value) => changeArg(field.path, value)} /> : field.widget === 'select-option' ? <SelectOptionEditor disabled={readOnly} value={args[field.path]} onChange={(value) => changeArg(field.path, value)} /> : typeof args[field.path] === 'boolean' ? <input disabled={readOnly} type="checkbox" checked={Boolean(args[field.path])} onChange={(e) => changeArg(field.path, e.target.checked)} /> : isNumericField(stepType, field.path, args[field.path]) ? <input disabled={readOnly} type="number" step={isSecondsTimeoutField(field.path) ? 0.1 : getSchemaProperty(stepType, field.path)?.type === 'integer' ? 1 : 'any'} value={toDisplayNumber(field.path, args[field.path])} onChange={(e) => changeArg(field.path, fromDisplayNumber(field.path, e.target.value))} /> : <input disabled={readOnly} value={String(args[field.path] ?? '')} onChange={(e) => changeArg(field.path, e.target.value)} />}
+          {getRunInputKey(args[field.path]) ? <input disabled value={`Resolved from run input: ${getRunInputKey(args[field.path])}`} /> : field.widget === 'ticket-fields' ? <TicketFields disabled={readOnly} value={args[field.path]} onChange={(value) => changeArg(field.path, value)} /> : field.widget === 'locator' ? <LocatorEditor disabled={readOnly} value={args[field.path]} onChange={(value) => changeArg(field.path, value)} /> : field.widget === 'select-option' ? <SelectOptionEditor disabled={readOnly} value={args[field.path]} onChange={(value) => changeArg(field.path, value)} /> : typeof args[field.path] === 'boolean' ? <input disabled={readOnly} type="checkbox" checked={Boolean(args[field.path])} onChange={(e) => changeArg(field.path, e.target.checked)} /> : isNumericField(stepType, field.path, args[field.path]) ? <input disabled={readOnly} type="number" step={isSecondsTimeoutField(field.path) ? 0.1 : getSchemaProperty(stepType, field.path)?.type === 'integer' ? 1 : 'any'} value={toDisplayNumber(field.path, args[field.path])} onChange={(e) => changeArg(field.path, fromDisplayNumber(field.path, e.target.value))} /> : <input disabled={readOnly} value={String(args[field.path] ?? '')} onChange={(e) => changeArg(field.path, e.target.value)} />}
           {isSecondsTimeoutField(field.path) && <small className="field-hint">Displayed in seconds, stored as milliseconds.</small>}
-        </label>
+        </label>{supportsRunInput(stepType, field.path, field.widget, args[field.path]) && <div className="run-input-control"><label className="inline-field"><input disabled={readOnly} type="checkbox" checked={Boolean(getRunInputKey(args[field.path]))} onChange={(event) => changeArg(field.path, event.target.checked ? `{{ inputs.${field.path} }}` : structuredClone(stepType?.default_args[field.path] ?? ''))} /> Use run input</label>{getRunInputKey(args[field.path]) && <label>Input name<input disabled={readOnly} value={getRunInputKey(args[field.path])} onChange={(event) => { const key = event.target.value.replace(/[^a-zA-Z0-9_.]/g, ''); changeArg(field.path, `{{ inputs.${key || field.path} }}`) }} /></label>}</div>}</div>
       ))}
       <details>
         <summary>Advanced arguments JSON</summary>
