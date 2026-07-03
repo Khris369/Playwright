@@ -258,7 +258,9 @@ export default function App() {
   const moveLinear = (id: string, delta: number) => {
     const order = linearOrder(nodes, edges); const index = order.indexOf(id); const next = index + delta
     if (index <= 0 || next <= 0 || next >= order.length) return
-    ;[order[index], order[next]] = [order[next], order[index]]; commit(nodes, rewireOrder(order))
+    ;[order[index], order[next]] = [order[next], order[index]]
+    const nextEdges = rewireOrder(order)
+    commit(arrange(nodes, nextEdges), nextEdges)
   }
   const importDefinition = () => {
     try { const parsed = JSON.parse(jsonImport); const graph = fromDefinition(parsed); checkpoint(); setNodes(graph.nodes.map((node) => ({ ...node, data: { ...node.data, title: stepTypes.find((item) => item.key === node.data.step_type)?.name } }))); setEdges(graph.edges); setDirty(true); setMessage('Imported; validation pending') } catch (error) { setMessage(`Import rejected: ${(error as Error).message}`) }

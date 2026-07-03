@@ -4,8 +4,10 @@ export const uid = () => crypto.randomUUID()
 
 const NODE_WIDTH = 210
 const NODE_HEIGHT = 80
-const STEP_X = 280
-const STEP_Y = 180
+const STEP_X = 250
+const STEP_Y = 130
+const COLUMNS_PER_ROW = 4
+const ROW_GAP = 70
 
 export function blankGraph(): { nodes: GraphNode[]; edges: GraphEdge[] } {
   return {
@@ -118,14 +120,59 @@ export function linearOrder(nodes: GraphNode[], edges: GraphEdge[]): string[] {
 }
 
 export function arrange(nodes: GraphNode[], edges: GraphEdge[]): GraphNode[] {
-  const order = linearOrder(nodes, edges)
-  const rank = new Map(order.map((id, index) => [id, index]))
+  const executable = nodes.filter((node) => node.data.kind !== 'comment')
+  const start = executable.find((node) => node.data.kind === 'start')
+  const rank = new Map<string, number>()
+  const queue: string[] = []
+  if (start) { rank.set(start.id, 0); queue.push(start.id) }
 
-  return nodes.map((node) =>
-    node.data.kind === 'comment'
-      ? node
-      : { ...node, position: { x: 80 + (rank.get(node.id) ?? 0) * STEP_X, y: 160 } },
-  )
+  while (queue.length) {
+    const source = queue.shift()!
+    const sourceRank = rank.get(source) ?? 0
+    for (const edge of edges.filter((item) => item.source === source)) {
+      if (rank.has(edge.target)) continue // Loop-back or already ranked through another path.
+      rank.set(edge.target, sourceRank + 1)
+      queue.push(edge.target)
+    }
+  }
+
+  let disconnectedRank = Math.max(0, ...rank.values()) + 1
+  for (const node of executable) {
+    if (!rank.has(node.id)) rank.set(node.id, disconnectedRank++)
+  }
+
+  const columns = new Map<number, GraphNode[]>()
+  for (const node of executable) {
+    const column = rank.get(node.id) ?? 0
+    columns.set(column, [...(columns.get(column) ?? []), node])
+  }
+  const rowCount = Math.ceil((Math.max(0, ...columns.keys()) + 1) / COLUMNS_PER_ROW)
+  const rowLaneCounts = Array.from({ length: rowCount }, (_, row) => {
+    const firstColumn = row * COLUMNS_PER_ROW
+    return Math.max(1, ...Array.from({ length: COLUMNS_PER_ROW }, (_, offset) => columns.get(firstColumn + offset)?.length ?? 0))
+  })
+  const rowTops: number[] = []
+  let nextTop = 70
+  for (const laneCount of rowLaneCounts) {
+    rowTops.push(nextTop)
+    nextTop += Math.max(80, (laneCount - 1) * STEP_Y + 80) + ROW_GAP
+  }
+
+  const position = new Map<string, { x: number; y: number }>()
+  for (const [column, columnNodes] of columns) {
+    const row = Math.floor(column / COLUMNS_PER_ROW)
+    const offset = column % COLUMNS_PER_ROW
+    const visualColumn = row % 2 === 0 ? offset : COLUMNS_PER_ROW - 1 - offset
+    const rowHeight = Math.max(80, (rowLaneCounts[row] - 1) * STEP_Y + 80)
+    const laneHeight = (columnNodes.length - 1) * STEP_Y + 80
+    const laneTop = rowTops[row] + (rowHeight - laneHeight) / 2
+    columnNodes.forEach((node, index) => position.set(node.id, {
+      x: 190 + visualColumn * STEP_X,
+      y: laneTop + index * STEP_Y,
+    }))
+  }
+
+  return nodes.map((node) => node.data.kind === 'comment' ? node : { ...node, position: position.get(node.id) ?? node.position })
 }
 
 export function rewireOrder(order: string[]): GraphEdge[] {

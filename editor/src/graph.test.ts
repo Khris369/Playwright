@@ -13,7 +13,28 @@ describe('graph utilities', () => {
     const nodes: GraphNode[] = Array.from({ length: 100 }, (_, index) => ({ id: String(index), type: 'workflow', position: { x: 0, y: 0 }, data: { kind: index ? 'step' : 'start', step_type: index ? 'wait_timeout' : undefined, args: index ? { timeout_ms: 1 } : undefined } }))
     const edges = Array.from({ length: 99 }, (_, index) => ({ id: `e${index}`, source: String(index), target: String(index + 1) }))
     expect(linearOrder(nodes, edges)).toHaveLength(100)
-    expect(arrange(nodes, edges)[99].position.x).toBe(80 + 99 * 280)
+    const arranged = arrange(nodes, edges)
+    expect(arranged[99].position.x).toBe(190 + 3 * 250)
+    expect(arranged[99].position.y).toBeGreaterThan(arranged[0].position.y)
+  })
+
+  it('places branches in compact vertical lanes and ignores loop-back ranking', () => {
+    const nodes: GraphNode[] = [
+      { id: 'start', type: 'workflow', position: { x: 0, y: 0 }, data: { kind: 'start' } },
+      { id: 'if', type: 'workflow', position: { x: 0, y: 0 }, data: { kind: 'if', args: {} } },
+      { id: 'yes', type: 'workflow', position: { x: 0, y: 0 }, data: { kind: 'step', step_type: 'wait_timeout' } },
+      { id: 'no', type: 'workflow', position: { x: 0, y: 0 }, data: { kind: 'step', step_type: 'wait_timeout' } },
+    ]
+    const arranged = arrange(nodes, [
+      { id: 'a', source: 'start', target: 'if' },
+      { id: 'b', source: 'if', target: 'yes' },
+      { id: 'c', source: 'if', target: 'no' },
+      { id: 'd', source: 'yes', target: 'if' },
+    ])
+    const yes = arranged.find((node) => node.id === 'yes')!
+    const no = arranged.find((node) => node.id === 'no')!
+    expect(yes.position.x).toBe(no.position.x)
+    expect(yes.position.y).not.toBe(no.position.y)
   })
 
   it('rewires a reordered linear fallback', () => {

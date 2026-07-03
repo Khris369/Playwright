@@ -367,7 +367,7 @@ header a {
     transition: flex-basis .2s ease;
 }
 
-.bottom-panels.is-expanded { flex-basis: min(42vh, 430px); }
+.bottom-panels.is-expanded { flex-basis: min(55vh, 560px); }
 .bottom-panels details { height: 100%; }
 .bottom-panels summary { cursor: pointer; font-weight: 650; }
 .json-panel-content { height: calc(100% - 30px); padding-top: 8px; display: grid; grid-template-rows: minmax(0, 1fr) auto; gap: 7px; }
@@ -377,6 +377,8 @@ header a {
     height: 100%;
     min-height: 0;
     font: 11px ui-monospace, monospace;
+    resize: vertical;
+    max-width: 100%;
 }
 
 .bottom-panels li button {
