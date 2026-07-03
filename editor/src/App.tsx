@@ -34,6 +34,7 @@ export default function App() {
   const [jsonImport, setJsonImport] = useState('')
   const [assistantOpen, setAssistantOpen] = useState(false)
   const [jsonOpen, setJsonOpen] = useState(false)
+  const [sequenceOpen, setSequenceOpen] = useState(true)
   const [contextMenu, setContextMenu] = useState<{ kind: 'node'; nodeId: string; x: number; y: number } | { kind: 'edge'; edgeId: string; x: number; y: number } | null>(null)
   const copied = useRef<GraphNode | undefined>(undefined)
   const reconnectSucceeded = useRef(true)
@@ -50,12 +51,13 @@ export default function App() {
   const definition = useMemo(() => toDefinition(nodes, edges), [nodes, edges])
   const renderedNodes = useMemo(() => nodes.map((node) => ({
     ...node,
+    selected: node.id === selectedId,
     data: {
       ...node.data,
       source_handle: resolveHandleSide(nodes, edges, node, 'source'),
       target_handle: resolveHandleSide(nodes, edges, node, 'target'),
     },
-  })), [nodes, edges])
+  })), [nodes, edges, selectedId])
   const renderedEdges = useMemo(() => edges.map((edge) => {
     const sourceNode = nodes.find((node) => node.id === edge.source)
     const targetNode = nodes.find((node) => node.id === edge.target)
@@ -273,7 +275,7 @@ export default function App() {
     <div className="workspace">
       <Palette stepTypes={stepTypes} disabled={readOnly} onAdd={addStep} onControl={addControl} onComment={addComment}/>
       <section className="canvas" ref={reactFlowWrapper}>
-        <aside className="sequence-rail" aria-label="Workflow sequence"><h2>Sequence</h2><ol>{sequenceNodes.map((node, index) => <li key={node.id} className={selectedId === node.id ? 'is-selected' : ''}><button type="button" title={`Focus ${node.data.title ?? node.data.step_type ?? node.data.kind}`} onClick={() => { setSelectedId(node.id); reactFlowInstance.current?.fitView({ nodes: [{ id: node.id }], padding: 1.5, duration: 250, maxZoom: 1.2 }) }}><span>{index + 1}</span><small>{node.data.kind === 'start' ? 'Start' : node.data.title ?? node.data.step_type ?? node.data.kind}</small></button>{index > 0 && <div><button aria-label={`Move ${index + 1} up`} disabled={readOnly || index <= 1} onClick={() => moveLinear(node.id, -1)}>↑</button><button aria-label={`Move ${index + 1} down`} disabled={readOnly || index === sequenceNodes.length - 1} onClick={() => moveLinear(node.id, 1)}>↓</button></div>}</li>)}</ol></aside>
+        <aside className={`sequence-rail nodrag nowheel ${sequenceOpen ? '' : 'is-collapsed'}`} aria-label="Workflow sequence"><div className="sequence-rail-header"><h2>Sequence</h2><button type="button" aria-label={sequenceOpen ? 'Collapse sequence' : 'Expand sequence'} aria-expanded={sequenceOpen} onClick={() => setSequenceOpen((open) => !open)}>{sequenceOpen ? '−' : '+'}</button></div>{sequenceOpen && <ol>{sequenceNodes.map((node, index) => <li key={node.id} className={selectedId === node.id ? 'is-selected' : ''}><button type="button" title={`Focus ${node.data.title ?? node.data.step_type ?? node.data.kind}`} onClick={() => { setSelectedId(node.id); reactFlowInstance.current?.fitView({ nodes: [{ id: node.id }], padding: 1.5, duration: 250, maxZoom: 1.2 }) }}><span>{index + 1}</span><small>{node.data.kind === 'start' ? 'Start' : node.data.title ?? node.data.step_type ?? node.data.kind}</small></button>{index > 0 && <div><button aria-label={`Move ${index + 1} up`} disabled={readOnly || index <= 1} onClick={() => moveLinear(node.id, -1)}>↑</button><button aria-label={`Move ${index + 1} down`} disabled={readOnly || index === sequenceNodes.length - 1} onClick={() => moveLinear(node.id, 1)}>↓</button></div>}</li>)}</ol>}</aside>
         <ReactFlow
           nodes={renderedNodes}
           edges={renderedEdges}
