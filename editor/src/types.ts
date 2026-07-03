@@ -20,6 +20,7 @@ export type GraphNodeData = {
   title?: string
   errors?: string[]
   runState?: string
+  sequenceSelected?: boolean
   source_handle?: HandleSide
   target_handle?: HandleSide
 }

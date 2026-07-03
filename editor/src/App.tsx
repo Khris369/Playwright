@@ -51,9 +51,9 @@ export default function App() {
   const definition = useMemo(() => toDefinition(nodes, edges), [nodes, edges])
   const renderedNodes = useMemo(() => nodes.map((node) => ({
     ...node,
-    selected: node.id === selectedId,
     data: {
       ...node.data,
+      sequenceSelected: node.id === selectedId,
       source_handle: resolveHandleSide(nodes, edges, node, 'source'),
       target_handle: resolveHandleSide(nodes, edges, node, 'target'),
     },

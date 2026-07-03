@@ -23,7 +23,7 @@ export function WorkflowNode({ id, data, selected }: NodeProps<GraphNode>) {
   }, [data.source_handle, data.target_handle, id, updateNodeInternals])
 
   return (
-    <div className={`workflow-node ${selected ? 'selected' : ''} ${data.errors?.length ? 'invalid' : ''} ${data.runState ?? ''}`}>
+    <div className={`workflow-node ${selected || data.sequenceSelected ? 'selected' : ''} ${data.errors?.length ? 'invalid' : ''} ${data.runState ?? ''}`}>
       {data.kind !== 'comment' && renderHandle('target', data.target_handle)}
       {data.kind === 'if' ? <><Handle id="true" type="source" position={Position.Right} style={{ top: '35%' }} /><Handle id="false" type="source" position={Position.Right} style={{ top: '70%' }} /></> : data.kind === 'loop' ? <><Handle id="body" type="source" position={Position.Right} style={{ top: '35%' }} /><Handle id="done" type="source" position={Position.Right} style={{ top: '70%' }} /></> : data.kind !== 'comment' && renderHandle('source', data.source_handle)}
       <div className="node-kind">{data.kind}</div>
