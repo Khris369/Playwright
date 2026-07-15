@@ -923,6 +923,15 @@ body.json-sidebar-open .json-sidebar-overlay {
   display: grid;
   gap: 8px;
 }
+.artifact-group {
+  display: grid;
+  gap: 8px;
+}
+.artifact-group h4 {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+}
 .artifact-item {
   display: flex;
   align-items: center;

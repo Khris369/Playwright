@@ -6,7 +6,7 @@ from app.core.settings import get_settings
 from app.engine.executor import StepExecutionError, execute_step
 from app.engine.graph import GraphValidationError, compile_definition
 from app.engine.template import resolve_value
-from app.services.workflow_artifacts import record_artifact, run_artifact_dir
+from app.services.workflow_artifacts import record_artifact, run_artifact_dir, step_artifact_dir
 from app.services.workflow_version_repository import WorkflowVersionRepository
 from app.services.workflow_run_repository import WorkflowRunRepository
 
@@ -62,6 +62,11 @@ def _record_artifact_safely(
         return
 
 
+def _safe_artifact_name(value: str) -> str:
+    cleaned = "".join(char if char.isalnum() or char in {"-", "_"} else "_" for char in value)
+    return cleaned[:80] or "step"
+
+
 class WorkflowRunnerService:
     @staticmethod
     def run_workflow_version(version_id: int, inputs: dict[str, Any] | None = None) -> int:
@@ -107,7 +112,12 @@ class WorkflowRunnerService:
         final_screenshot_enabled = (
             artifacts_enabled and settings.workflow_final_screenshot_enabled
         )
+        step_screenshots_enabled = artifacts_enabled and _parse_bool(
+            inputs.get("capture_step_screenshots"),
+            settings.workflow_step_screenshots_enabled,
+        )
         artifact_dir = run_artifact_dir(run_id) if artifacts_enabled else None
+        step_dir = step_artifact_dir(run_id) if step_screenshots_enabled else None
         trace_path = artifact_dir / "trace.zip" if artifact_dir is not None else None
         final_screenshot_path = artifact_dir / "final.png" if artifact_dir is not None else None
         failure_screenshot_path = artifact_dir / "failure.png" if artifact_dir is not None else None
@@ -163,7 +173,7 @@ class WorkflowRunnerService:
                         else:
                             result = execute_step(step_type, args, state)
                             next_id = step.get("next")
-                        WorkflowRunRepository.create_step_run(
+                        step_run_id = WorkflowRunRepository.create_step_run(
                             workflow_run_id=run_id,
                             step_index=execution_index,
                             step_id=str(step_id) if step_id is not None else None,
@@ -172,6 +182,21 @@ class WorkflowRunnerService:
                             args_json=args,
                             log_text=result.log,
                         )
+                        if step_screenshots_enabled and step_dir is not None:
+                            try:
+                                screenshot_path = step_dir / (
+                                    f"{execution_index:03d}-{_safe_artifact_name(step_type)}.png"
+                                )
+                                page.screenshot(path=str(screenshot_path), full_page=True)
+                                _record_artifact_safely(
+                                    run_id,
+                                    "step_screenshot",
+                                    screenshot_path,
+                                    step_run_id=step_run_id,
+                                    mime_type="image/png",
+                                )
+                            except Exception:
+                                pass
                     except (KeyError, StepExecutionError, ValueError) as exc:
                         step_run_id = WorkflowRunRepository.create_step_run(
                             workflow_run_id=run_id,

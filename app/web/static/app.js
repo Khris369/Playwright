@@ -941,7 +941,22 @@ async function refreshWorkflows() {
     return "Download";
   }
 
-  function renderRunArtifacts(artifacts) {
+  function artifactLink(artifact) {
+    const sizeKb = Math.max(1, Math.round(Number(artifact.size_bytes || 0) / 1024));
+    return `
+      <div class="artifact-item">
+        <div>
+          <strong>${escapeHtml(artifactLabel(artifact))}</strong>
+          <small>${escapeHtml(artifact.mime_type || "application/octet-stream")} · ${sizeKb} KB</small>
+        </div>
+        <a class="btn-secondary btn-sm" href="${escapeHtml(artifact.download_url)}" target="_blank" rel="noopener">
+          ${escapeHtml(artifactActionLabel(artifact))}
+        </a>
+      </div>
+    `;
+  }
+
+  function renderRunArtifacts(artifacts, steps = []) {
     const container = $("run-artifacts");
     if (!container) {
       return;
@@ -950,20 +965,25 @@ async function refreshWorkflows() {
       container.innerHTML = "<div class='muted'>No artifacts captured for this run.</div>";
       return;
     }
-    container.innerHTML = artifacts.map((artifact) => {
-      const sizeKb = Math.max(1, Math.round(Number(artifact.size_bytes || 0) / 1024));
-      return `
-        <div class="artifact-item">
-          <div>
-            <strong>${escapeHtml(artifactLabel(artifact))}</strong>
-            <small>${escapeHtml(artifact.mime_type || "application/octet-stream")} · ${sizeKb} KB</small>
-          </div>
-          <a class="btn-secondary btn-sm" href="${escapeHtml(artifact.download_url)}" target="_blank" rel="noopener">
-            ${escapeHtml(artifactActionLabel(artifact))}
-          </a>
-        </div>
-      `;
+    const runArtifacts = artifacts.filter((artifact) => !artifact.step_run_id);
+    const stepArtifacts = artifacts.filter((artifact) => artifact.step_run_id);
+    const stepById = new Map(steps.map((step) => [Number(step.id), step]));
+    const groups = new Map();
+    for (const artifact of stepArtifacts) {
+      const key = Number(artifact.step_run_id);
+      groups.set(key, [...(groups.get(key) || []), artifact]);
+    }
+    const runHtml = runArtifacts.length
+      ? `<div class="artifact-group"><h4>Run artifacts</h4>${runArtifacts.map(artifactLink).join("")}</div>`
+      : "";
+    const stepHtml = [...groups].map(([stepRunId, items]) => {
+      const step = stepById.get(stepRunId);
+      const label = step
+        ? `Step ${Number(step.step_index) + 1}: ${step.step_type}`
+        : `Step run #${stepRunId}`;
+      return `<div class="artifact-group"><h4>${escapeHtml(label)}</h4>${items.map(artifactLink).join("")}</div>`;
     }).join("");
+    container.innerHTML = runHtml + stepHtml;
   }
 
   async function loadRunMonitor(runId) {
@@ -972,7 +992,7 @@ async function refreshWorkflows() {
     const artifacts = await api(`/workflow-runs/${runId}/artifacts`);
     $("run-details").textContent = JSON.stringify(run, null, 2);
     $("step-details").textContent = JSON.stringify(steps, null, 2);
-    renderRunArtifacts(artifacts || []);
+    renderRunArtifacts(artifacts || [], steps || []);
     return { run, steps, artifacts };
   }
 

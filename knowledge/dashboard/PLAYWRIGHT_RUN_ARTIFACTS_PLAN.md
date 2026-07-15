@@ -283,6 +283,14 @@ Validation:
 - Render step-level artifact links.
 - Add better error messages around artifact capture failures without failing the workflow solely because artifact capture failed.
 
+Status: implemented as an opt-in feature. Enable globally with `WORKFLOW_STEP_SCREENSHOTS_ENABLED=true` or per run with:
+
+```json
+{
+  "capture_step_screenshots": true
+}
+```
+
 Validation:
 
 - Enable step screenshots through run inputs.
@@ -305,6 +313,14 @@ Validation:
 - Add cleanup command or scheduled task.
 - Delete artifacts older than configured retention.
 - Keep DB metadata in sync or mark deleted artifacts.
+
+Status: implemented as a manual/schedulable command:
+
+```bash
+python -m app.cli.cleanup_workflow_artifacts --days 14
+```
+
+If `--days` is omitted, the command uses `WORKFLOW_ARTIFACT_RETENTION_DAYS`.
 
 Validation:
 

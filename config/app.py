@@ -52,5 +52,9 @@ def app_config() -> Dict[str, object]:
         "workflow_final_screenshot_enabled": _to_bool(
             env("WORKFLOW_FINAL_SCREENSHOT_ENABLED"), default=True
         ),
+        "workflow_step_screenshots_enabled": _to_bool(
+            env("WORKFLOW_STEP_SCREENSHOTS_ENABLED"), default=False
+        ),
+        "workflow_artifact_retention_days": int(env("WORKFLOW_ARTIFACT_RETENTION_DAYS", "14") or "14"),
         "workflow_artifacts_dir": env("WORKFLOW_ARTIFACTS_DIR", "app/web/artifacts"),
     }

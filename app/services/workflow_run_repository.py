@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 
 from app.services.db import get_db_cursor
 
@@ -210,3 +211,31 @@ class WorkflowRunRepository:
                 (run_id, artifact_id),
             )
             return cursor.fetchone()
+
+    @staticmethod
+    def list_artifacts_created_before(cutoff: datetime, limit: int = 500) -> list[dict]:
+        with get_db_cursor() as (_, cursor):
+            cursor.execute(
+                """
+                SELECT id, workflow_run_id, step_run_id, artifact_type, file_path,
+                       mime_type, size_bytes, created_at
+                FROM workflow_run_artifacts
+                WHERE created_at < %s
+                ORDER BY created_at ASC, id ASC
+                LIMIT %s
+                """,
+                (cutoff, limit),
+            )
+            return list(cursor.fetchall())
+
+    @staticmethod
+    def delete_artifacts(artifact_ids: list[int]) -> int:
+        if not artifact_ids:
+            return 0
+        placeholders = ", ".join(["%s"] * len(artifact_ids))
+        with get_db_cursor() as (_, cursor):
+            cursor.execute(
+                f"DELETE FROM workflow_run_artifacts WHERE id IN ({placeholders})",
+                tuple(artifact_ids),
+            )
+            return int(cursor.rowcount)
