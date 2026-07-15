@@ -3,67 +3,41 @@ from __future__ import annotations
 from app.schemas.workflow import WorkflowCreate, WorkflowVersionCreate, WorkflowVersionUpdate
 from app.services.db import get_db_cursor
 
-
-def _workflow_columns() -> set[str]:
-    return get_table_columns("workflows")
-
-
-def _can_join_users_for_workflows() -> bool:
-    workflow_columns = _workflow_columns()
-    user_columns = get_table_columns("users")
-    return "updated_by_user_id" in workflow_columns and "display_name" in user_columns
-
-
 def _workflow_select_sql() -> str:
-    columns = _workflow_columns()
-    select_parts = ["w.id"]
-
-    for optional_column in ("owner_user_id", "created_by_user_id", "updated_by_user_id"):
-        if optional_column in columns:
-            select_parts.append(f"w.{optional_column}")
-        else:
-            select_parts.append(f"NULL AS {optional_column}")
-
-    if _can_join_users_for_workflows():
-        select_parts.append("u.display_name AS updated_by_display_name")
-    else:
-        select_parts.append("NULL AS updated_by_display_name")
-
-    select_parts.extend(
-        [
-            "w.name",
-            "w.description",
-            "w.status",
-            "w.created_at",
-            "w.updated_at",
-        ]
-    )
-
-    query = f"SELECT {', '.join(select_parts)} FROM workflows w"
-    if _can_join_users_for_workflows():
-        query += " LEFT JOIN users u ON u.id = w.updated_by_user_id"
-    return query
+    return """
+        SELECT
+            w.id,
+            w.owner_user_id,
+            w.created_by_user_id,
+            w.updated_by_user_id,
+            u.display_name AS updated_by_display_name,
+            w.name,
+            w.description,
+            w.status,
+            w.created_at,
+            w.updated_at
+        FROM workflows w
+        LEFT JOIN users u ON u.id = w.updated_by_user_id
+    """
 
 
 class WorkflowRepository:
     @staticmethod
     def create_workflow(payload: WorkflowCreate, user_id: int | None = None) -> dict:
-        workflow_columns = _workflow_columns()
-        insert_columns: list[str] = ["name", "description", "status"]
-        insert_values: list[object] = [payload.name, payload.description, payload.status]
-
-        for optional_column in ("owner_user_id", "created_by_user_id", "updated_by_user_id"):
-            if optional_column in workflow_columns:
-                insert_columns.insert(len(insert_columns) - 3, optional_column)
-                insert_values.insert(len(insert_values) - 3, user_id)
-
-        placeholders = ", ".join(["%s"] * len(insert_columns))
-        column_sql = ", ".join(insert_columns)
-
         with get_db_cursor() as (_, cursor):
             cursor.execute(
-                f"INSERT INTO workflows ({column_sql}) VALUES ({placeholders})",
-                tuple(insert_values),
+                """
+                INSERT INTO workflows (
+                    owner_user_id,
+                    created_by_user_id,
+                    updated_by_user_id,
+                    name,
+                    description,
+                    status
+                )
+                VALUES (%s, %s, %s, %s, %s, %s)
+                """,
+                (user_id, user_id, user_id, payload.name, payload.description, payload.status),
             )
             workflow_id = int(cursor.lastrowid)
 
