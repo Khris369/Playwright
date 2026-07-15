@@ -17,6 +17,7 @@ from app.schemas.workflow_run import (
 from app.schemas.troubleshoot import TroubleshootRequest, TroubleshootResponse
 from app.services.troubleshoot_ai_service import TroubleshootAIService
 from app.services.workflow_artifacts import resolve_artifact_path
+from app.services.workflow_run_control import WorkflowRunControl
 from app.services.workflow_run_repository import WorkflowRunRepository
 from app.services.workflow_run_dispatcher import WorkflowRunDispatcher
 from app.services.workflow_runner import WorkflowRunnerService
@@ -96,6 +97,27 @@ def get_workflow_run(run_id: int) -> WorkflowRunResponse:
             status_code=status.HTTP_404_NOT_FOUND, detail="Workflow run not found"
         )
     return WorkflowRunResponse(**run)
+
+
+@router.post("/{run_id}/stop")
+def stop_workflow_run(run_id: int) -> dict[str, str]:
+    run = WorkflowRunRepository.get_run(run_id)
+    if run is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Workflow run not found"
+        )
+    current_status = str(run.get("status", "")).lower()
+    if current_status == "queued":
+        WorkflowRunRepository.cancel_queued_run(run_id)
+        WorkflowRunControl.request_cancel(run_id)
+        return {"status": "cancelled"}
+    if current_status == "running":
+        WorkflowRunControl.request_cancel(run_id)
+        return {"status": "stopping"}
+    raise HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail="Run is not active",
+    )
 
 
 @router.get("/{run_id}/steps", response_model=list[WorkflowStepRunResponse])

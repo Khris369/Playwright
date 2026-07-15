@@ -994,6 +994,11 @@ body.json-sidebar-open .json-sidebar-overlay {
   background: #eff6ff;
   color: #1d4ed8;
 }
+.status-pill.is-cancelled {
+  border-color: #fdba74;
+  background: #fff7ed;
+  color: #9a3412;
+}
 .run-error-summary,
 .step-error {
   margin: 0;
@@ -1214,6 +1219,10 @@ body.json-sidebar-open .json-sidebar-overlay {
 }
 
 .runner-page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
   margin-bottom: 14px;
   padding: 4px 2px;
 }
@@ -1344,6 +1353,11 @@ body.json-sidebar-open .json-sidebar-overlay {
   align-items: center;
   flex-wrap: wrap;
   gap: 8px 12px;
+}
+.run-summary-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
 }
 .run-summary-main strong {
   font-size: 16px;

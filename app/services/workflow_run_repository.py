@@ -66,6 +66,19 @@ class WorkflowRunRepository:
             )
 
     @staticmethod
+    def try_mark_run_running(run_id: int) -> bool:
+        with get_db_cursor() as (_, cursor):
+            cursor.execute(
+                """
+                UPDATE workflow_runs
+                SET status = %s, started_at = NOW()
+                WHERE id = %s AND status = %s
+                """,
+                ("running", run_id, "queued"),
+            )
+            return cursor.rowcount > 0
+
+    @staticmethod
     def create_step_run(
         workflow_run_id: int,
         step_index: int,
@@ -110,6 +123,19 @@ class WorkflowRunRepository:
                 """,
                 (status, error_summary, run_id),
             )
+
+    @staticmethod
+    def cancel_queued_run(run_id: int, error_summary: str = "cancelled_by_user") -> bool:
+        with get_db_cursor() as (_, cursor):
+            cursor.execute(
+                """
+                UPDATE workflow_runs
+                SET status = %s, error_summary = %s, finished_at = NOW()
+                WHERE id = %s AND status = %s
+                """,
+                ("cancelled", error_summary, run_id, "queued"),
+            )
+            return cursor.rowcount > 0
 
     @staticmethod
     def get_run(run_id: int) -> dict | None:

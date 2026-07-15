@@ -593,12 +593,30 @@ function renderStepBuilder() {
     const workflowId = Number(params.get("run_workflow_id"));
     const versionId = Number(params.get("run_version_id"));
     const tab = params.get("tab");
+    const returnToEditor = params.get("return_to_editor");
     return {
       tab,
       workflowId: Number.isFinite(workflowId) && workflowId > 0 ? workflowId : null,
       versionId: Number.isFinite(versionId) && versionId > 0 ? versionId : null,
+      returnToEditor:
+        typeof returnToEditor === "string" && returnToEditor.startsWith("/ui/editor")
+          ? returnToEditor
+          : null,
     };
   }
+
+function updateRunsBackLink(returnToEditor) {
+  const backLink = $("runs-back-to-editor");
+  if (!backLink) {
+    return;
+  }
+  if (returnToEditor) {
+    backLink.href = returnToEditor;
+    backLink.hidden = false;
+    return;
+  }
+  backLink.hidden = true;
+}
 
 function collectInputPaths(value, outputSet) {
   if (typeof value === "string") {
@@ -1278,6 +1296,9 @@ function clearRunMonitorPreview() {
     if (["failed", "error"].includes(normalized)) {
       return "is-failed";
     }
+    if (["cancelled", "canceled"].includes(normalized)) {
+      return "is-cancelled";
+    }
     if (["running", "queued"].includes(normalized)) {
       return "is-running";
     }
@@ -1389,6 +1410,9 @@ function applyStepFilters(container) {
   const activeNote = isActiveRunStatus(run.status)
     ? "<span class=\"run-live-note\">Auto-refreshing while run is active</span>"
     : "";
+  const stopAction = isActiveRunStatus(run.status)
+    ? `<button id="btn-stop-run" type="button" class="btn-danger btn-sm">Stop Run</button>`
+    : "";
   container.innerHTML = `
     <div class="run-summary-bar">
       <div class="run-summary-main">
@@ -1406,8 +1430,18 @@ function applyStepFilters(container) {
         <span>Inputs: ${escapeHtml(inputs)}</span>
         ${activeNote}
       </div>
+      <div class="run-summary-actions">${stopAction}</div>
     </div>
   `;
+  container.querySelector("#btn-stop-run")?.addEventListener("click", async () => {
+    try {
+      await api(`/workflow-runs/${run.id}/stop`, { method: "POST" });
+      toast(`Stop requested for run #${run.id}`);
+      await loadRunMonitor(run.id);
+    } catch (err) {
+      toast(err.message, true);
+    }
+  });
 }
 
   function renderFailureBanner(run, steps) {
@@ -2302,6 +2336,7 @@ if ($("workflow-list") || $("editor-workflow-id") || $("run-workflow-id")) {
     if (initial.tab) {
       setActiveTab(initial.tab);
     }
+    updateRunsBackLink(initial.returnToEditor);
     if (initial.workflowId && $("run-workflow-id")) {
       setValueIfPresent("run-workflow-id", initial.workflowId);
       await refreshRunVersionsForWorkflow(initial.workflowId, initial.versionId);

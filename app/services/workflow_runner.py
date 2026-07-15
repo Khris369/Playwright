@@ -7,6 +7,7 @@ from app.engine.executor import StepExecutionError, execute_step
 from app.engine.graph import GraphValidationError, compile_definition
 from app.engine.template import resolve_value
 from app.services.workflow_artifacts import record_artifact, run_artifact_dir, step_artifact_dir
+from app.services.workflow_run_control import RunCancelledError, WorkflowRunControl
 from app.services.workflow_version_repository import WorkflowVersionRepository
 from app.services.workflow_run_repository import WorkflowRunRepository
 
@@ -92,6 +93,9 @@ class WorkflowRunnerService:
         run = WorkflowRunRepository.get_run(run_id)
         if run is None:
             raise ValueError("workflow_run_not_found")
+        if str(run.get("status", "")).lower() == "cancelled":
+            WorkflowRunControl.clear(run_id)
+            return
 
         definition = run.get("resolved_definition_json") or {}
         steps = definition.get("steps", [])
@@ -104,7 +108,9 @@ class WorkflowRunnerService:
         inputs = run.get("inputs_json") or {}
         state: dict[str, Any] = {"visible_texts": [], "current_url": ""}
         context = {"inputs": inputs, "secrets": {}}
-        WorkflowRunRepository.mark_run_running(run_id)
+        if not WorkflowRunRepository.try_mark_run_running(run_id):
+            WorkflowRunControl.clear(run_id)
+            return
 
         settings = get_settings()
         artifacts_enabled = settings.workflow_artifacts_enabled
@@ -134,6 +140,12 @@ class WorkflowRunnerService:
             with sync_playwright() as p:
                 browser = p.chromium.launch(headless=headless, slow_mo=slow_mo)
                 context_pw = browser.new_context()
+                WorkflowRunControl.register_cancel_callback(
+                    run_id,
+                    lambda: _close_run_browser(context_pw, browser),
+                )
+                if WorkflowRunControl.is_cancel_requested(run_id):
+                    raise RunCancelledError("cancelled_by_user")
                 if trace_enabled:
                     context_pw.tracing.start(
                         screenshots=True, snapshots=True, sources=True
@@ -146,6 +158,8 @@ class WorkflowRunnerService:
                 loop_counts: dict[str, int] = {}
                 execution_index = 0
                 while current_id is not None:
+                    if WorkflowRunControl.is_cancel_requested(run_id):
+                        raise RunCancelledError("cancelled_by_user")
                     if execution_index >= 10_000:
                         raise StepExecutionError("Workflow exceeded the 10,000 node execution safety limit")
                     step = by_id.get(current_id)
@@ -237,6 +251,7 @@ class WorkflowRunnerService:
                         )
                         context_pw.close()
                         browser.close()
+                        WorkflowRunControl.clear(run_id)
                         return
                     execution_index += 1
                     current_id = str(next_id) if next_id is not None else None
@@ -267,7 +282,31 @@ class WorkflowRunnerService:
                 browser.close()
 
             WorkflowRunRepository.finalize_run(run_id, status="passed")
+            WorkflowRunControl.clear(run_id)
+            return
+        except RunCancelledError:
+            WorkflowRunRepository.finalize_run(
+                run_id, status="cancelled", error_summary="cancelled_by_user"
+            )
+            WorkflowRunControl.clear(run_id)
             return
         except Exception as exc:
-            WorkflowRunRepository.finalize_run(run_id, status="failed", error_summary="runner_error")
+            if WorkflowRunControl.is_cancel_requested(run_id):
+                WorkflowRunRepository.finalize_run(
+                    run_id, status="cancelled", error_summary="cancelled_by_user"
+                )
+            else:
+                WorkflowRunRepository.finalize_run(run_id, status="failed", error_summary="runner_error")
+            WorkflowRunControl.clear(run_id)
             return
+
+
+def _close_run_browser(context_pw: Any, browser: Any) -> None:
+    try:
+        context_pw.close()
+    except Exception:
+        pass
+    try:
+        browser.close()
+    except Exception:
+        pass
