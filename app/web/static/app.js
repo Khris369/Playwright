@@ -979,10 +979,11 @@ async function refreshWorkflows() {
   await refreshRunArgPresets();
 }
 
-  function clearRunMonitorPreview() {
-    if ($("monitor-run-id")) {
-      $("monitor-run-id").value = "";
-    }
+function clearRunMonitorPreview() {
+  stopRunMonitorPolling();
+  if ($("monitor-run-id")) {
+    $("monitor-run-id").value = "";
+  }
     if ($("run-details")) {
       $("run-details").textContent = "";
     }
@@ -1029,10 +1030,96 @@ async function refreshWorkflows() {
     return "";
   }
 
-  function statusBadge(status) {
-    const label = String(status || "unknown");
-    return `<span class="status-pill ${statusClass(label)}">${escapeHtml(label)}</span>`;
+function statusBadge(status) {
+  const label = String(status || "unknown");
+  return `<span class="status-pill ${statusClass(label)}">${escapeHtml(label)}</span>`;
+}
+
+let stepMonitorFilter = "all";
+let stepMonitorSearch = "";
+
+function normalizedStepStatus(step) {
+  return String(step?.status || "unknown").toLowerCase();
+}
+
+function stepSearchText(step) {
+  return [
+    Number(step.step_index) + 1,
+    step.step_type,
+    formatStepArgs(step.args_json),
+    step.step_id,
+    step.status,
+    step.error_text,
+    step.log_text,
+  ].filter((value) => value !== undefined && value !== null).join(" ").toLowerCase();
+}
+
+function bindStepMonitorControls(container) {
+  container.querySelectorAll("[data-step-filter]").forEach((button) => {
+    button.addEventListener("click", () => {
+      stepMonitorFilter = button.getAttribute("data-step-filter") || "all";
+      applyStepFilters(container);
+    });
+  });
+
+  const search = container.querySelector("[data-step-search]");
+  if (search) {
+    search.addEventListener("input", () => {
+      stepMonitorSearch = search.value || "";
+      applyStepFilters(container);
+    });
   }
+
+  const list = container.querySelector("[data-step-list]");
+  container.querySelector("[data-step-action='collapse-all']")?.addEventListener("click", () => {
+    list?.querySelectorAll(".step-result[open]").forEach((step) => {
+      step.open = false;
+    });
+  });
+  container.querySelector("[data-step-action='expand-failed']")?.addEventListener("click", () => {
+    list?.querySelectorAll(".step-result[data-step-status='failed']").forEach((step) => {
+      step.open = true;
+    });
+  });
+  container.querySelector("[data-step-action='jump-failed']")?.addEventListener("click", () => {
+    const failed = list?.querySelector(".step-result[data-step-status='failed']:not([hidden])")
+      || list?.querySelector(".step-result[data-step-status='failed']");
+    if (!failed) {
+      toast("No failed steps found", true);
+      return;
+    }
+    failed.open = true;
+    failed.scrollIntoView({ behavior: "smooth", block: "center" });
+    failed.classList.add("is-jump-target");
+    setTimeout(() => failed.classList.remove("is-jump-target"), 1400);
+  });
+}
+
+function applyStepFilters(container) {
+  const search = stepMonitorSearch.trim().toLowerCase();
+  const rows = [...container.querySelectorAll(".step-result")];
+  let visible = 0;
+
+  rows.forEach((row) => {
+    const status = row.dataset.stepStatus || "";
+    const statusMatches = stepMonitorFilter === "all" || status === stepMonitorFilter;
+    const searchMatches = !search || (row.dataset.searchText || "").includes(search);
+    const show = statusMatches && searchMatches;
+    row.hidden = !show;
+    if (show) visible += 1;
+  });
+
+  container.querySelectorAll("[data-step-filter]").forEach((button) => {
+    const active = button.getAttribute("data-step-filter") === stepMonitorFilter;
+    button.classList.toggle("is-active", active);
+    button.setAttribute("aria-pressed", active ? "true" : "false");
+  });
+
+  const empty = container.querySelector("[data-step-empty]");
+  if (empty) {
+    empty.hidden = visible > 0;
+  }
+}
 
   function renderRunSummary(run, steps) {
     const container = $("run-summary");
@@ -1042,12 +1129,15 @@ async function refreshWorkflows() {
     const total = steps.length;
     const passed = steps.filter((step) => step.status === "passed").length;
     const failed = steps.filter((step) => step.status === "failed").length;
-    const inputs = run.inputs_json && Object.keys(run.inputs_json).length
-      ? Object.keys(run.inputs_json).join(", ")
-      : "None";
-    container.innerHTML = `
-      <div class="run-summary-bar">
-        <div class="run-summary-main">
+  const inputs = run.inputs_json && Object.keys(run.inputs_json).length
+    ? Object.keys(run.inputs_json).join(", ")
+    : "None";
+  const activeNote = isActiveRunStatus(run.status)
+    ? "<span class=\"run-live-note\">Auto-refreshing while run is active</span>"
+    : "";
+  container.innerHTML = `
+    <div class="run-summary-bar">
+      <div class="run-summary-main">
           ${statusBadge(run.status)}
           <strong>Run #${escapeHtml(run.id)}</strong>
           <span>Workflow #${escapeHtml(run.workflow_id)}</span>
@@ -1058,12 +1148,13 @@ async function refreshWorkflows() {
           <span>${passed} passed</span>
           <span>${failed} failed</span>
           <span>Started ${escapeHtml(formatDateTime(run.started_at))}</span>
-          <span>Finished ${escapeHtml(formatDateTime(run.finished_at))}</span>
-          <span>Inputs: ${escapeHtml(inputs)}</span>
-        </div>
+        <span>Finished ${escapeHtml(formatDateTime(run.finished_at))}</span>
+        <span>Inputs: ${escapeHtml(inputs)}</span>
+        ${activeNote}
       </div>
-    `;
-  }
+    </div>
+  `;
+}
 
   function renderFailureBanner(run, steps) {
     const container = $("run-failure-banner");
@@ -1111,34 +1202,84 @@ async function refreshWorkflows() {
     return JSON.stringify(args).slice(0, 160);
   }
 
-  function renderStepSummary(steps) {
-    const container = $("step-summary");
-    if (!container) {
-      return;
-    }
-    if (!steps.length) {
-      container.innerHTML = "<div class='muted'>No step logs recorded for this run.</div>";
-      return;
-    }
-    container.innerHTML = steps.map((step) => `
-      <details class="step-result ${statusClass(step.status)}" ${step.status === "failed" ? "open" : ""}>
+function renderStepSummary(steps) {
+  const container = $("step-summary");
+  if (!container) {
+    return;
+  }
+  if (!steps.length) {
+    container.innerHTML = "<div class='muted'>No step logs recorded for this run.</div>";
+    return;
+  }
+
+  const counts = steps.reduce((summary, step) => {
+    const status = normalizedStepStatus(step);
+    summary.total += 1;
+    summary[status] = (summary[status] || 0) + 1;
+    return summary;
+  }, { total: 0 });
+  const filterStatuses = ["all", "failed", "passed", "running", "skipped", "warning"]
+    .filter((status) => ["all", "failed", "passed"].includes(status) || counts[status]);
+  const countSummary = `${counts.total} steps • ${counts.passed || 0} passed • ${counts.failed || 0} failed`;
+  const filters = filterStatuses.map((status) => `
+    <button type="button" class="step-filter ${status === stepMonitorFilter ? "is-active" : ""}" data-step-filter="${status}" aria-pressed="${status === stepMonitorFilter ? "true" : "false"}">
+      ${escapeHtml(status.charAt(0).toUpperCase() + status.slice(1))}
+    </button>
+  `).join("");
+  const rows = steps.map((step) => {
+    const status = normalizedStepStatus(step);
+    const target = formatStepArgs(step.args_json);
+    const stepNumber = Number(step.step_index) + 1;
+    const searchText = escapeHtml(stepSearchText(step));
+    return `
+      <details
+        class="step-result ${statusClass(step.status)}"
+        ${status === "failed" ? "open" : ""}
+        data-step-status="${escapeHtml(status)}"
+        data-step-name="${escapeHtml(step.step_type || "")}"
+        data-step-target="${escapeHtml(target)}"
+        data-node-id="${escapeHtml(step.step_id || "")}"
+        data-error="${escapeHtml(step.error_text || "")}"
+        data-search-text="${searchText}"
+      >
         <summary class="step-result-header">
-          <div>
-            <strong>Step ${Number(step.step_index) + 1}: ${escapeHtml(step.step_type)}</strong>
+          <div class="step-result-title">
+            <strong>Step ${stepNumber}: ${escapeHtml(step.step_type)}</strong>
             <small>${step.step_id ? `Node ${escapeHtml(step.step_id)}` : "No node ID"}</small>
           </div>
           ${statusBadge(step.status)}
         </summary>
         <div class="step-result-body">
-          <div><span>Target/Input</span><strong>${escapeHtml(formatStepArgs(step.args_json))}</strong></div>
+          <div><span>Target/Input</span><strong>${escapeHtml(target)}</strong></div>
+          <div><span>Node ID</span><strong>${step.step_id ? escapeHtml(step.step_id) : "None"}</strong></div>
           <div><span>Started</span><strong>${escapeHtml(formatDateTime(step.started_at))}</strong></div>
           <div><span>Finished</span><strong>${escapeHtml(formatDateTime(step.finished_at))}</strong></div>
         </div>
         ${step.log_text ? `<p class="step-log">${escapeHtml(step.log_text)}</p>` : ""}
         ${step.error_text ? `<p class="step-error">${escapeHtml(step.error_text)}</p>` : ""}
       </details>
-    `).join("");
-  }
+    `;
+  }).join("");
+
+  container.innerHTML = `
+    <div class="steps-toolbar" aria-label="Step controls">
+      <div class="steps-toolbar-summary">${escapeHtml(countSummary)}</div>
+      <div class="steps-toolbar-controls">
+        <div class="step-filter-group" aria-label="Step status filters">${filters}</div>
+        <input class="step-search" type="search" data-step-search placeholder="Search steps, targets, node IDs, errors..." value="${escapeHtml(stepMonitorSearch)}">
+        <div class="step-actions">
+          <button type="button" class="btn-secondary btn-sm" data-step-action="collapse-all">Collapse all</button>
+          <button type="button" class="btn-secondary btn-sm" data-step-action="expand-failed">Expand failed</button>
+          <button type="button" class="btn-secondary btn-sm" data-step-action="jump-failed">Jump to failed</button>
+        </div>
+      </div>
+    </div>
+    <div class="step-list-scroll" data-step-list>${rows}</div>
+    <div class="step-empty-state" data-step-empty hidden>No steps match this filter.</div>
+  `;
+  bindStepMonitorControls(container);
+  applyStepFilters(container);
+}
 
   function artifactLabel(artifact) {
     const labels = {
@@ -1214,7 +1355,7 @@ async function refreshWorkflows() {
     });
   }
 
-  function renderRunArtifacts(artifacts, steps = []) {
+function renderRunArtifacts(artifacts, steps = []) {
     const container = $("run-artifacts");
     if (!container) {
       return;
@@ -1242,21 +1383,61 @@ async function refreshWorkflows() {
       return `<div class="artifact-group"><h4>${escapeHtml(label)}</h4>${items.map(artifactLink).join("")}</div>`;
     }).join("");
     container.innerHTML = runHtml + stepHtml;
-    bindArtifactActions(container);
-  }
+  bindArtifactActions(container);
+}
 
-  async function loadRunMonitor(runId) {
-    const run = await api(`/workflow-runs/${runId}`);
-    const steps = await api(`/workflow-runs/${runId}/steps`);
-    const artifacts = await api(`/workflow-runs/${runId}/artifacts`);
+let runMonitorPollTimer = null;
+let runMonitorPollingRunId = null;
+
+function isActiveRunStatus(status) {
+  return ["queued", "running"].includes(String(status || "").toLowerCase());
+}
+
+function stopRunMonitorPolling() {
+  if (runMonitorPollTimer) {
+    window.clearTimeout(runMonitorPollTimer);
+  }
+  runMonitorPollTimer = null;
+  runMonitorPollingRunId = null;
+}
+
+function scheduleRunMonitorPoll(runId) {
+  stopRunMonitorPolling();
+  runMonitorPollingRunId = runId;
+  runMonitorPollTimer = window.setTimeout(async () => {
+    try {
+      const result = await loadRunMonitor(runId, { autoPoll: true });
+      if (isActiveRunStatus(result?.run?.status) && runMonitorPollingRunId === runId) {
+        scheduleRunMonitorPoll(runId);
+      } else {
+        stopRunMonitorPolling();
+      }
+    } catch (err) {
+      toast(err.message, true);
+      stopRunMonitorPolling();
+    }
+  }, 2500);
+}
+
+async function loadRunMonitor(runId, options = {}) {
+  const run = await api(`/workflow-runs/${runId}`);
+  const steps = await api(`/workflow-runs/${runId}/steps`);
+  const artifacts = await api(`/workflow-runs/${runId}/artifacts`);
     renderRunSummary(run, steps || []);
     renderFailureBanner(run, steps || []);
     renderStepSummary(steps || []);
     $("run-details").textContent = JSON.stringify(run, null, 2);
-    $("step-details").textContent = JSON.stringify(steps, null, 2);
-    renderRunArtifacts(artifacts || [], steps || []);
-    return { run, steps, artifacts };
+  $("step-details").textContent = JSON.stringify(steps, null, 2);
+  renderRunArtifacts(artifacts || [], steps || []);
+  if (!options.autoPoll) {
+    if (isActiveRunStatus(run.status)) {
+      scheduleRunMonitorPoll(runId);
+    } else {
+      stopRunMonitorPolling();
+    }
   }
+  return { run, steps, artifacts };
+}
 
 async function refreshTemplates() {
   const items = await api("/workflow-templates");

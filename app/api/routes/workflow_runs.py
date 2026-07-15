@@ -5,7 +5,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, status
 from fastapi.responses import FileResponse
 
 from app.schemas.workflow_run import (
@@ -18,6 +18,7 @@ from app.schemas.troubleshoot import TroubleshootRequest, TroubleshootResponse
 from app.services.troubleshoot_ai_service import TroubleshootAIService
 from app.services.workflow_artifacts import resolve_artifact_path
 from app.services.workflow_run_repository import WorkflowRunRepository
+from app.services.workflow_run_dispatcher import WorkflowRunDispatcher
 from app.services.workflow_runner import WorkflowRunnerService
 
 router = APIRouter(prefix="/workflow-runs", tags=["workflow-runs"])
@@ -53,7 +54,10 @@ def list_workflow_runs(
 
 
 @router.post("", response_model=WorkflowRunResponse, status_code=status.HTTP_201_CREATED)
-def create_workflow_run(payload: WorkflowRunCreate) -> WorkflowRunResponse:
+def create_workflow_run(
+    payload: WorkflowRunCreate,
+    background_tasks: BackgroundTasks,
+) -> WorkflowRunResponse:
     try:
         run_id = WorkflowRunnerService.run_workflow_version(
             version_id=payload.workflow_version_id,
@@ -73,7 +77,7 @@ def create_workflow_run(payload: WorkflowRunCreate) -> WorkflowRunResponse:
         raise
 
     # Execute inline so the browser launches from the same interactive process/session.
-    WorkflowRunnerService.execute_run(run_id)
+    WorkflowRunDispatcher.dispatch(run_id, background_tasks)
 
     run = WorkflowRunRepository.get_run(run_id)
     if run is None:
