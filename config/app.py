@@ -47,4 +47,10 @@ def app_config() -> Dict[str, object]:
         "name": env("APP_NAME", "WorkflowBuilder"),
         "env": env("APP_ENV", "local"),
         "debug": _to_bool(env("APP_DEBUG"), default=True),
+        "workflow_artifacts_enabled": _to_bool(env("WORKFLOW_ARTIFACTS_ENABLED"), default=True),
+        "workflow_trace_enabled": _to_bool(env("WORKFLOW_TRACE_ENABLED"), default=True),
+        "workflow_final_screenshot_enabled": _to_bool(
+            env("WORKFLOW_FINAL_SCREENSHOT_ENABLED"), default=True
+        ),
+        "workflow_artifacts_dir": env("WORKFLOW_ARTIFACTS_DIR", "app/web/artifacts"),
     }

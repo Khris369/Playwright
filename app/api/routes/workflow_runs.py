@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query, status
+from fastapi.responses import FileResponse
 
 from app.schemas.workflow_run import (
+    WorkflowRunArtifactResponse,
     WorkflowRunCreate,
     WorkflowRunResponse,
     WorkflowStepRunResponse,
 )
 from app.schemas.troubleshoot import TroubleshootRequest, TroubleshootResponse
 from app.services.troubleshoot_ai_service import TroubleshootAIService
+from app.services.workflow_artifacts import resolve_artifact_path
 from app.services.workflow_run_repository import WorkflowRunRepository
 from app.services.workflow_runner import WorkflowRunnerService
 
@@ -69,6 +72,49 @@ def get_workflow_run(run_id: int) -> WorkflowRunResponse:
 def list_workflow_run_steps(run_id: int) -> list[WorkflowStepRunResponse]:
     rows = WorkflowRunRepository.list_step_runs(run_id)
     return [WorkflowStepRunResponse(**row) for row in rows]
+
+
+@router.get("/{run_id}/artifacts", response_model=list[WorkflowRunArtifactResponse])
+def list_workflow_run_artifacts(run_id: int) -> list[WorkflowRunArtifactResponse]:
+    if WorkflowRunRepository.get_run(run_id) is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Workflow run not found"
+        )
+    rows = WorkflowRunRepository.list_artifacts_for_run(run_id)
+    return [
+        WorkflowRunArtifactResponse(
+            **row,
+            download_url=f"/workflow-runs/{run_id}/artifacts/{row['id']}",
+        )
+        for row in rows
+    ]
+
+
+@router.get("/{run_id}/artifacts/{artifact_id}")
+def download_workflow_run_artifact(run_id: int, artifact_id: int) -> FileResponse:
+    artifact = WorkflowRunRepository.get_artifact(run_id, artifact_id)
+    if artifact is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Artifact not found"
+        )
+    try:
+        path = resolve_artifact_path(str(artifact["file_path"]))
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Artifact not found"
+        ) from exc
+    if not path.exists() or not path.is_file():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Artifact not found"
+        )
+    mime_type = str(artifact["mime_type"])
+    opens_in_browser = mime_type.startswith("image/") or mime_type.startswith("video/")
+    return FileResponse(
+        str(path),
+        media_type=mime_type,
+        filename=path.name,
+        content_disposition_type="inline" if opens_in_browser else "attachment",
+    )
 
 
 @router.post("/{run_id}/troubleshoot", response_model=TroubleshootResponse)

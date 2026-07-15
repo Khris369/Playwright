@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.core.settings import get_settings
 from app.engine.executor import StepExecutionError, execute_step
 from app.engine.graph import GraphValidationError, compile_definition
 from app.engine.template import resolve_value
+from app.services.workflow_artifacts import record_artifact, run_artifact_dir
 from app.services.workflow_version_repository import WorkflowVersionRepository
 from app.services.workflow_run_repository import WorkflowRunRepository
 
@@ -39,6 +41,25 @@ def _condition_matches(args: dict[str, Any], state: dict[str, Any], inputs: dict
     if operator == "contains":
         return str(expected) in str(actual or "")
     return actual == expected
+
+
+def _record_artifact_safely(
+    run_id: int,
+    artifact_type: str,
+    path: Any,
+    step_run_id: int | None = None,
+    mime_type: str | None = None,
+) -> None:
+    try:
+        record_artifact(
+            run_id=run_id,
+            artifact_type=artifact_type,
+            path=path,
+            step_run_id=step_run_id,
+            mime_type=mime_type,
+        )
+    except Exception:
+        return
 
 
 class WorkflowRunnerService:
@@ -80,6 +101,17 @@ class WorkflowRunnerService:
         context = {"inputs": inputs, "secrets": {}}
         WorkflowRunRepository.mark_run_running(run_id)
 
+        settings = get_settings()
+        artifacts_enabled = settings.workflow_artifacts_enabled
+        trace_enabled = artifacts_enabled and settings.workflow_trace_enabled
+        final_screenshot_enabled = (
+            artifacts_enabled and settings.workflow_final_screenshot_enabled
+        )
+        artifact_dir = run_artifact_dir(run_id) if artifacts_enabled else None
+        trace_path = artifact_dir / "trace.zip" if artifact_dir is not None else None
+        final_screenshot_path = artifact_dir / "final.png" if artifact_dir is not None else None
+        failure_screenshot_path = artifact_dir / "failure.png" if artifact_dir is not None else None
+
         try:
             from playwright.sync_api import sync_playwright
 
@@ -92,6 +124,10 @@ class WorkflowRunnerService:
             with sync_playwright() as p:
                 browser = p.chromium.launch(headless=headless, slow_mo=slow_mo)
                 context_pw = browser.new_context()
+                if trace_enabled:
+                    context_pw.tracing.start(
+                        screenshots=True, snapshots=True, sources=True
+                    )
                 page = context_pw.new_page()
                 state["page"] = page
 
@@ -137,7 +173,7 @@ class WorkflowRunnerService:
                             log_text=result.log,
                         )
                     except (KeyError, StepExecutionError, ValueError) as exc:
-                        WorkflowRunRepository.create_step_run(
+                        step_run_id = WorkflowRunRepository.create_step_run(
                             workflow_run_id=run_id,
                             step_index=execution_index,
                             step_id=str(step_id) if step_id is not None else None,
@@ -146,6 +182,31 @@ class WorkflowRunnerService:
                             args_json=args if isinstance(args, dict) else {},
                             error_text=str(exc),
                         )
+                        if artifacts_enabled and failure_screenshot_path is not None:
+                            try:
+                                page.screenshot(
+                                    path=str(failure_screenshot_path), full_page=True
+                                )
+                                _record_artifact_safely(
+                                    run_id,
+                                    "failure_screenshot",
+                                    failure_screenshot_path,
+                                    step_run_id=step_run_id,
+                                    mime_type="image/png",
+                                )
+                            except Exception:
+                                pass
+                        if trace_enabled and trace_path is not None:
+                            try:
+                                context_pw.tracing.stop(path=str(trace_path))
+                                _record_artifact_safely(
+                                    run_id,
+                                    "trace",
+                                    trace_path,
+                                    mime_type="application/zip",
+                                )
+                            except Exception:
+                                pass
                         WorkflowRunRepository.finalize_run(
                             run_id, status="failed", error_summary=str(exc)
                         )
@@ -155,6 +216,28 @@ class WorkflowRunnerService:
                     execution_index += 1
                     current_id = str(next_id) if next_id is not None else None
 
+                if final_screenshot_enabled and final_screenshot_path is not None:
+                    try:
+                        page.screenshot(path=str(final_screenshot_path), full_page=True)
+                        _record_artifact_safely(
+                            run_id,
+                            "final_screenshot",
+                            final_screenshot_path,
+                            mime_type="image/png",
+                        )
+                    except Exception:
+                        pass
+                if trace_enabled and trace_path is not None:
+                    try:
+                        context_pw.tracing.stop(path=str(trace_path))
+                        _record_artifact_safely(
+                            run_id,
+                            "trace",
+                            trace_path,
+                            mime_type="application/zip",
+                        )
+                    except Exception:
+                        pass
                 context_pw.close()
                 browser.close()
 

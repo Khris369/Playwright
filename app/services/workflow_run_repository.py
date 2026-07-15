@@ -151,3 +151,62 @@ class WorkflowRunRepository:
                 if isinstance(row.get("args_json"), str):
                     row["args_json"] = json.loads(row["args_json"])
             return rows
+
+    @staticmethod
+    def create_artifact(
+        workflow_run_id: int,
+        artifact_type: str,
+        file_path: str,
+        mime_type: str,
+        size_bytes: int,
+        step_run_id: int | None = None,
+    ) -> int:
+        with get_db_cursor() as (_, cursor):
+            cursor.execute(
+                """
+                INSERT INTO workflow_run_artifacts (
+                    workflow_run_id, step_run_id, artifact_type, file_path,
+                    mime_type, size_bytes
+                )
+                VALUES (%s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    workflow_run_id,
+                    step_run_id,
+                    artifact_type,
+                    file_path,
+                    mime_type,
+                    size_bytes,
+                ),
+            )
+            artifact_id = int(cursor.lastrowid)
+        return artifact_id
+
+    @staticmethod
+    def list_artifacts_for_run(run_id: int) -> list[dict]:
+        with get_db_cursor() as (_, cursor):
+            cursor.execute(
+                """
+                SELECT id, workflow_run_id, step_run_id, artifact_type, file_path,
+                       mime_type, size_bytes, created_at
+                FROM workflow_run_artifacts
+                WHERE workflow_run_id = %s
+                ORDER BY created_at ASC, id ASC
+                """,
+                (run_id,),
+            )
+            return list(cursor.fetchall())
+
+    @staticmethod
+    def get_artifact(run_id: int, artifact_id: int) -> dict | None:
+        with get_db_cursor() as (_, cursor):
+            cursor.execute(
+                """
+                SELECT id, workflow_run_id, step_run_id, artifact_type, file_path,
+                       mime_type, size_bytes, created_at
+                FROM workflow_run_artifacts
+                WHERE workflow_run_id = %s AND id = %s
+                """,
+                (run_id, artifact_id),
+            )
+            return cursor.fetchone()

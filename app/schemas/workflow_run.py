@@ -40,3 +40,15 @@ class WorkflowStepRunResponse(BaseModel):
     error_text: str | None = None
     screenshot_path: str | None = None
     created_at: datetime | None = None
+
+
+class WorkflowRunArtifactResponse(BaseModel):
+    id: int
+    workflow_run_id: int
+    step_run_id: int | None = None
+    artifact_type: str
+    file_path: str
+    mime_type: str
+    size_bytes: int
+    created_at: datetime | None = None
+    download_url: str

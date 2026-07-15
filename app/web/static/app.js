@@ -910,14 +910,70 @@ async function refreshWorkflows() {
     if ($("step-details")) {
       $("step-details").textContent = "";
     }
+    if ($("run-artifacts")) {
+      $("run-artifacts").innerHTML = "<div class='muted'>Load a run to see artifacts.</div>";
+    }
+  }
+
+  function artifactLabel(artifact) {
+    const labels = {
+      trace: "Trace",
+      final_screenshot: "Final screenshot",
+      failure_screenshot: "Failure screenshot",
+      step_screenshot: "Step screenshot",
+      video: "Video",
+      console_log: "Console log",
+      network_log: "Network log",
+    };
+    return labels[artifact.artifact_type] || artifact.artifact_type;
+  }
+
+  function artifactActionLabel(artifact) {
+    if (artifact.artifact_type === "trace") {
+      return "Download trace";
+    }
+    if (String(artifact.mime_type || "").startsWith("image/")) {
+      return "Open image";
+    }
+    if (String(artifact.mime_type || "").startsWith("video/")) {
+      return "Open video";
+    }
+    return "Download";
+  }
+
+  function renderRunArtifacts(artifacts) {
+    const container = $("run-artifacts");
+    if (!container) {
+      return;
+    }
+    if (!artifacts.length) {
+      container.innerHTML = "<div class='muted'>No artifacts captured for this run.</div>";
+      return;
+    }
+    container.innerHTML = artifacts.map((artifact) => {
+      const sizeKb = Math.max(1, Math.round(Number(artifact.size_bytes || 0) / 1024));
+      return `
+        <div class="artifact-item">
+          <div>
+            <strong>${escapeHtml(artifactLabel(artifact))}</strong>
+            <small>${escapeHtml(artifact.mime_type || "application/octet-stream")} · ${sizeKb} KB</small>
+          </div>
+          <a class="btn-secondary btn-sm" href="${escapeHtml(artifact.download_url)}" target="_blank" rel="noopener">
+            ${escapeHtml(artifactActionLabel(artifact))}
+          </a>
+        </div>
+      `;
+    }).join("");
   }
 
   async function loadRunMonitor(runId) {
     const run = await api(`/workflow-runs/${runId}`);
     const steps = await api(`/workflow-runs/${runId}/steps`);
+    const artifacts = await api(`/workflow-runs/${runId}/artifacts`);
     $("run-details").textContent = JSON.stringify(run, null, 2);
     $("step-details").textContent = JSON.stringify(steps, null, 2);
-    return { run, steps };
+    renderRunArtifacts(artifacts || []);
+    return { run, steps, artifacts };
   }
 
 async function refreshTemplates() {
