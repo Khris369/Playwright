@@ -10,6 +10,8 @@ type Props = {
 
 type LocatorValue = Record<string, unknown>
 const RUN_INPUT_TEMPLATE = /^\{\{\s*inputs\.([a-zA-Z0-9_.]+)\s*\}\}$/
+const LOCATOR_STRATEGIES = ['label', 'role', 'text', 'css'] as const
+type LocatorStrategy = typeof LOCATOR_STRATEGIES[number]
 
 const HANDLE_OPTIONS: Array<{ value?: HandleSide; label: string }> = [
   { label: 'Auto' },
@@ -73,6 +75,22 @@ function fromDisplayNumber(path: string, value: string): number | undefined {
   return isSecondsTimeoutField(path) ? Math.round(parsed * 1000) : parsed
 }
 
+function getTextCandidate(value: LocatorValue, keys: string[]): string {
+  for (const key of keys) {
+    const candidate = value[key]
+    if (typeof candidate === 'string' && candidate.trim()) return candidate
+  }
+  return ''
+}
+
+function normalizeLocatorTarget(value: LocatorValue, strategy: LocatorStrategy): LocatorValue {
+  const base = { strategy, exact: value.exact !== false }
+  if (strategy === 'label') return { ...base, label: getTextCandidate(value, ['label', 'name', 'text']) }
+  if (strategy === 'role') return { ...base, role: getTextCandidate(value, ['role']) || 'button', name: getTextCandidate(value, ['name', 'label', 'text']) }
+  if (strategy === 'text') return { ...base, text: getTextCandidate(value, ['text', 'name', 'label']) }
+  return { ...base, selector: getTextCandidate(value, ['selector']) }
+}
+
 function ConnectionSideFields({ node, readOnly, onChange }: { node: GraphNode; readOnly: boolean; onChange: (data: GraphNode['data']) => void }) {
   if (node.data.kind === 'comment') return null
 
@@ -115,12 +133,12 @@ function ConnectionSideFields({ node, readOnly, onChange }: { node: GraphNode; r
 }
 
 function LocatorTargetFields({ prefix = '', value, disabled, onChange }: { prefix?: string; value: LocatorValue; disabled: boolean; onChange: (value: LocatorValue) => void }) {
-  const strategy = String(value.strategy ?? 'label')
+  const strategy = LOCATOR_STRATEGIES.includes(value.strategy as LocatorStrategy) ? value.strategy as LocatorStrategy : 'label'
   return (
     <div className="locator-target-fields">
       <label>
         {prefix}Strategy <Help text="How Playwright locates the element. Prefer Label or Role; use CSS only when accessible locators are unavailable." />
-        <select disabled={disabled} value={strategy} onChange={(e) => onChange({ ...value, strategy: e.target.value })}>
+        <select disabled={disabled} value={strategy} onChange={(e) => onChange(normalizeLocatorTarget(value, e.target.value as LocatorStrategy))}>
           <option value="label">Label</option>
           <option value="role">Role</option>
           <option value="text">Visible text</option>

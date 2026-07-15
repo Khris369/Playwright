@@ -51,7 +51,15 @@ def select_option(args: SelectOptionArgs, state: dict[str, Any]) -> StepResult:
 
 def wait_for_element(args: WaitForElementArgs, state: dict[str, Any]) -> StepResult:
     if (page := _page(state)) is not None:
-        resolve_locator(page, args.target).wait_for(state="visible", timeout=args.timeout_ms)
+        locator = resolve_locator(page, args.target, require_unique=False)
+        try:
+            locator.wait_for(state="visible", timeout=args.timeout_ms)
+        except Exception as exc:
+            raise StepExecutionError(str(exc)) from exc
+        if args.target.match == "strict":
+            count = locator.count()
+            if count != 1:
+                raise LocatorResolutionError(f"strict locator matched {count} elements; expected exactly one")
     return StepResult(f"Waited for target ({args.timeout_ms}ms)")
 
 

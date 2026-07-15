@@ -32,6 +32,32 @@ describe('editor components', () => {
     expect(change).toHaveBeenCalledWith(expect.objectContaining({ args: { target: expect.objectContaining({ strategy: 'label', label: 'Email address', exact: true }) } }))
   })
 
+  it('removes stale locator fields when changing click locator strategy', () => {
+    const click: StepType = {
+      ...step,
+      key: 'click',
+      name: 'Click',
+      default_args: { target: { strategy: 'role', role: 'button', name: 'Submit', exact: true } },
+      editor_schema: { fields: [{ path: 'target', widget: 'locator' }] },
+    }
+    const node: GraphNode = { id: 'click', type: 'workflow', position: { x: 0, y: 0 }, data: { kind: 'step', step_type: 'click', args: click.default_args } }
+    const change = vi.fn()
+    render(<Inspector node={node} stepType={click} readOnly={false} onChange={change}/>)
+
+    fireEvent.change(screen.getByDisplayValue('Role'), { target: { value: 'text' } })
+
+    expect(change).toHaveBeenCalledWith(expect.objectContaining({
+      args: {
+        target: {
+          strategy: 'text',
+          text: 'Submit',
+          exact: true,
+          match: 'strict',
+        },
+      },
+    }))
+  })
+
   it('keeps numeric timeout values as numbers', () => {
     const timeout: StepType = {
       key: 'wait_timeout',
