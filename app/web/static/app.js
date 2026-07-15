@@ -1033,7 +1033,7 @@ function workflowRow(wf) {
       <div class="workflow-cell workflow-cell-status" role="cell">
         <span class="workflow-status-badge">${escapeHtml(wf.status || "unknown")}</span>
       </div>
-      <div class="workflow-cell workflow-cell-created" role="cell">${formatWorkflowDateTime(wf.created_at || wf.updated_at || "")}</div>
+      <div class="workflow-cell workflow-cell-created" role="cell">${formatWorkflowDateTime(wf.updated_at || wf.created_at || "")}</div>
       <div class="workflow-cell workflow-cell-actions" role="cell">
         <button type="button" class="btn-link-inline" data-action="edit" data-workflow-id="${wf.id}">Edit</button>
         <button type="button" class="btn-danger-outline" data-action="delete" data-workflow-id="${wf.id}">Delete</button>
@@ -1081,7 +1081,7 @@ function renderWorkflowList() {
         <div class="workflow-cell workflow-cell-id" role="columnheader">ID</div>
         <div class="workflow-cell workflow-cell-name" role="columnheader">Workflow name</div>
         <div class="workflow-cell workflow-cell-status" role="columnheader">Status</div>
-        <div class="workflow-cell workflow-cell-created" role="columnheader">Created</div>
+        <div class="workflow-cell workflow-cell-created" role="columnheader">Updated</div>
         <div class="workflow-cell workflow-cell-actions" role="columnheader">Actions</div>
       </div>
     </div>

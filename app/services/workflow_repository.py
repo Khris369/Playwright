@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from app.schemas.workflow import WorkflowCreate, WorkflowVersionCreate, WorkflowVersionUpdate
 from app.services.db import get_db_cursor
-from app.services.schema_compat import get_table_columns
 
 
 def _workflow_columns() -> set[str]:

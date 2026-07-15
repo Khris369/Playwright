@@ -8,7 +8,6 @@ from typing import Any
 from app.engine.graph import compile_definition
 from app.schemas.workflow import WorkflowVersionCreate, WorkflowVersionUpdate
 from app.services.db import get_db_cursor
-from app.services.schema_compat import get_table_columns
 
 
 @dataclass
@@ -76,11 +75,16 @@ def _select_columns_sql() -> str:
 
 
 def _touch_workflow(cursor, workflow_id: int, user_id: int | None) -> None:
-    if "updated_by_user_id" not in _workflow_columns():
-        return
+    workflow_columns = _workflow_columns()
+    set_parts = ["updated_at = CURRENT_TIMESTAMP"]
+    values: list[object] = []
+    if "updated_by_user_id" in workflow_columns:
+        set_parts.insert(0, "updated_by_user_id = %s")
+        values.append(user_id)
+    values.append(workflow_id)
     cursor.execute(
-        "UPDATE workflows SET updated_by_user_id = %s WHERE id = %s",
-        (user_id, workflow_id),
+        f"UPDATE workflows SET {', '.join(set_parts)} WHERE id = %s",
+        tuple(values),
     )
 
 
