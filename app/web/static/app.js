@@ -142,6 +142,8 @@ let editorSteps = [];
 let draggedStepIndex = null;
 let dropPlaceholderIndex = null;
 let currentWorkflowVersions = [];
+let currentWorkflows = [];
+let runTriggerCooldownUntil = 0;
 const isDedicatedEditorPage = window.location.pathname === "/ui/editor";
 
 function editorUrlFor(workflowId) {
@@ -635,7 +637,7 @@ function updateRunControlsState() {
   const triggerBtn = $("btn-trigger-run");
   const generateBtn = $("btn-generate-run-inputs");
   if (triggerBtn) {
-    triggerBtn.disabled = !hasVersion;
+    triggerBtn.disabled = !hasVersion || Date.now() < runTriggerCooldownUntil;
   }
   if (generateBtn) {
     generateBtn.disabled = !hasVersion;
@@ -651,6 +653,36 @@ function updateRunControlsState() {
   }
   updateRunnerContext();
   updateRunJsonStatus();
+}
+
+function setRunTriggerButtonState({ label, disabled, cooldownMs = 0 } = {}) {
+  const triggerBtn = $("btn-trigger-run");
+  if (!triggerBtn) {
+    return;
+  }
+
+  if (!triggerBtn.dataset.defaultLabel) {
+    triggerBtn.dataset.defaultLabel = triggerBtn.textContent || "Trigger Run";
+  }
+
+  if (label) {
+    triggerBtn.textContent = label;
+  }
+
+  if (cooldownMs > 0) {
+    runTriggerCooldownUntil = Date.now() + cooldownMs;
+    triggerBtn.disabled = true;
+    window.setTimeout(() => {
+      runTriggerCooldownUntil = 0;
+      triggerBtn.textContent = triggerBtn.dataset.defaultLabel || "Trigger Run";
+      updateRunControlsState();
+    }, cooldownMs);
+    return;
+  }
+
+  if (typeof disabled === "boolean") {
+    triggerBtn.disabled = disabled;
+  }
 }
 
 function updateRunnerContext() {
@@ -893,13 +925,121 @@ async function loadCurrentUser() {
   }
 }
 
+function ensureWorkflowLayout() {
+  const workflowsPanel = document.querySelector('.tab-panel[data-panel="workflows"]');
+  if (!workflowsPanel || workflowsPanel.dataset.workflowsEnhanced === "true") {
+    return;
+  }
+
+  const sections = Array.from(workflowsPanel.querySelectorAll(":scope > section"));
+  const createSection = sections.find((section) => section.querySelector("#create-workflow-panel"));
+  const listSection = sections.find((section) => section.querySelector("#workflow-list"));
+  if (!createSection || !listSection) {
+    return;
+  }
+
+  const createPanel = createSection.querySelector("#create-workflow-panel");
+  const createSummary = createPanel?.querySelector("summary");
+  const createBody = createPanel?.querySelector(".create-workflow-body");
+  const createButton = createPanel?.querySelector("#btn-create-workflow");
+  const refreshButton = listSection.querySelector("#btn-refresh-workflows");
+  const workflowList = listSection.querySelector("#workflow-list");
+  const selectedWorkflowInput = listSection.querySelector("#selected-workflow-id");
+  const editButton = listSection.querySelector("#btn-edit-workflow");
+  const deleteButton = listSection.querySelector("#btn-delete-workflow");
+
+  if (!createPanel || !createBody || !createButton || !refreshButton || !workflowList || !selectedWorkflowInput || !editButton || !deleteButton) {
+    return;
+  }
+
+  if (createSummary) {
+    createSummary.hidden = true;
+  }
+
+  const header = document.createElement("div");
+  header.className = "workflows-header";
+  header.innerHTML = `
+    <div class="workflows-header-copy">
+      <h2>Workflows</h2>
+      <p class="hint">Manage workflow definitions and open the graph editor.</p>
+    </div>
+  `;
+
+  const toolbar = document.createElement("div");
+  toolbar.className = "workflows-toolbar";
+
+  const openCreateButton = document.createElement("button");
+  openCreateButton.id = "btn-open-create-workflow";
+  openCreateButton.type = "button";
+  openCreateButton.className = "btn-primary";
+  openCreateButton.textContent = "+ New Workflow";
+
+  refreshButton.classList.add("btn-secondary");
+  toolbar.append(openCreateButton, refreshButton);
+  header.appendChild(toolbar);
+
+  const controls = document.createElement("div");
+  controls.className = "workflow-controls";
+  controls.innerHTML = '<input id="workflow-search" type="search" placeholder="Search workflows..." aria-label="Search workflows">';
+
+  const listShell = document.createElement("div");
+  listShell.className = "workflow-list-shell";
+  workflowList.className = "workflow-table";
+  listShell.appendChild(workflowList);
+
+  const hiddenActions = document.createElement("div");
+  hiddenActions.className = "workflow-selection-actions";
+  hiddenActions.hidden = true;
+  hiddenActions.append(editButton, deleteButton);
+
+  createPanel.classList.add("workflow-create-panel");
+
+  const card = document.createElement("section");
+  card.className = "card card-primary workflows-card";
+  card.append(header, createPanel, controls, listShell, selectedWorkflowInput, hiddenActions);
+
+  workflowsPanel.replaceChildren(card);
+  workflowsPanel.dataset.workflowsEnhanced = "true";
+}
+
+function openWorkflowCreatePanel() {
+  const panel = $("create-workflow-panel");
+  if (!panel) {
+    return;
+  }
+  panel.open = true;
+  const nameInput = $("wf-name");
+  if (nameInput) {
+    nameInput.focus();
+  }
+}
+
+function formatWorkflowDateTime(value) {
+  if (!value) {
+    return "—";
+  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return escapeHtml(value);
+  }
+  return escapeHtml(parsed.toLocaleString());
+}
+
 function workflowRow(wf) {
-  const updatedAt = wf.updated_at || wf.created_at || "";
-  const updatedBy = wf.updated_by_display_name || (wf.updated_by_user_id ? `user #${wf.updated_by_user_id}` : "system");
-  return `<div class="item clickable" data-workflow-id="${wf.id}">
-    <div><strong>#${wf.id}</strong> ${wf.name || "(unnamed)"}</div>
-    <div class="muted">status=${wf.status || ""} updated=${updatedAt} by=${updatedBy}</div>
-  </div>`;
+  return `
+    <div class="workflow-row item clickable" data-workflow-id="${wf.id}" role="row" tabindex="0">
+      <div class="workflow-cell workflow-cell-id" role="cell">#${escapeHtml(wf.id)}</div>
+      <div class="workflow-cell workflow-cell-name" role="cell">${escapeHtml(wf.name || "(unnamed)")}</div>
+      <div class="workflow-cell workflow-cell-status" role="cell">
+        <span class="workflow-status-badge">${escapeHtml(wf.status || "unknown")}</span>
+      </div>
+      <div class="workflow-cell workflow-cell-created" role="cell">${formatWorkflowDateTime(wf.created_at || wf.updated_at || "")}</div>
+      <div class="workflow-cell workflow-cell-actions" role="cell">
+        <button type="button" class="btn-link-inline" data-action="edit" data-workflow-id="${wf.id}">Edit</button>
+        <button type="button" class="btn-danger-outline" data-action="delete" data-workflow-id="${wf.id}">Delete</button>
+      </div>
+    </div>
+  `;
 }
 
 function workflowOption(wf) {
@@ -907,10 +1047,114 @@ function workflowOption(wf) {
 }
 
 function setSelectedWorkflowListItem(workflowId) {
-  document.querySelectorAll("#workflow-list .item.clickable").forEach((el) => {
+  document.querySelectorAll("#workflow-list .workflow-row").forEach((el) => {
     const rowWorkflowId = Number(el.getAttribute("data-workflow-id"));
     el.classList.toggle("is-selected", rowWorkflowId === workflowId);
   });
+}
+
+function renderWorkflowList() {
+  const workflowListEl = $("workflow-list");
+  if (!workflowListEl) {
+    return;
+  }
+
+  const searchValue = String(($("workflow-search") || {}).value || "").trim().toLowerCase();
+  const filteredWorkflows = currentWorkflows.filter((wf) => {
+    if (!searchValue) {
+      return true;
+    }
+    const haystack = [wf.id, wf.name || "", wf.status || ""].join(" ").toLowerCase();
+    return haystack.includes(searchValue);
+  });
+
+  if (!filteredWorkflows.length) {
+    workflowListEl.innerHTML = searchValue
+      ? '<div class="workflow-empty muted">No workflows match your search.</div>'
+      : '<div class="workflow-empty muted">No workflows yet.</div>';
+    return;
+  }
+
+  workflowListEl.innerHTML = `
+    <div class="workflow-table-head" role="rowgroup">
+      <div class="workflow-row workflow-row-head" role="row">
+        <div class="workflow-cell workflow-cell-id" role="columnheader">ID</div>
+        <div class="workflow-cell workflow-cell-name" role="columnheader">Workflow name</div>
+        <div class="workflow-cell workflow-cell-status" role="columnheader">Status</div>
+        <div class="workflow-cell workflow-cell-created" role="columnheader">Created</div>
+        <div class="workflow-cell workflow-cell-actions" role="columnheader">Actions</div>
+      </div>
+    </div>
+    <div class="workflow-table-body" role="rowgroup">
+      ${filteredWorkflows.map(workflowRow).join("")}
+    </div>
+  `;
+
+  const selectedWorkflowId = Number(($("selected-workflow-id") || {}).value || 0);
+  setSelectedWorkflowListItem(selectedWorkflowId || null);
+}
+
+function goToWorkflowEditor(workflowId) {
+  if (!workflowId) {
+    toast("Load a workflow first", true);
+    return;
+  }
+  window.location.href = editorUrlFor(workflowId);
+}
+
+async function selectWorkflow(workflowId) {
+  if (!workflowId) {
+    return;
+  }
+
+  setValueIfPresent("selected-workflow-id", workflowId);
+  setValueIfPresent("run-workflow-id", workflowId);
+  setValueIfPresent("editor-workflow-id", workflowId);
+  setSelectedWorkflowListItem(workflowId);
+
+  const shouldLoadDetails = Boolean($("selected-workflow-id") && $("workflow-details"));
+  if (shouldLoadDetails) {
+    await loadWorkflowDetails(workflowId);
+    return;
+  }
+
+  await refreshRunVersionsForWorkflow(workflowId, null);
+}
+
+async function deleteWorkflowById(workflowId) {
+  if (!workflowId) {
+    throw new Error("Select a workflow first");
+  }
+
+  const workflow = currentWorkflows.find((item) => Number(item.id) === Number(workflowId));
+  const label = workflow?.name ? `${workflow.name} (#${workflow.id})` : `workflow #${workflowId}`;
+  if (!window.confirm(`Delete ${label}? This will mark it inactive.`)) {
+    return false;
+  }
+
+  await api(`/workflows/${workflowId}`, { method: "DELETE" });
+  setValueIfPresent("editor-workflow-id", "");
+  setValueIfPresent("selected-workflow-id", "");
+  setValueIfPresent("ver-workflow-id", "");
+  setValueIfPresent("ver-current-version-id", "");
+  if ($("ver-revision-id")) {
+    setValueIfPresent("ver-revision-id", "");
+  }
+  currentWorkflowVersions = [];
+  populateRevisionDropdown([]);
+  updateWorkflowInfoPanel(null, null);
+  updateVersionPrimaryActions();
+  setValueIfPresent("run-workflow-id", "");
+  setValueIfPresent("run-version-id", "");
+  clearRunMonitorPreview();
+  setSelectedWorkflowListItem(null);
+  if ($("workflow-details")) {
+    $("workflow-details").textContent = "";
+  }
+  updateCurrentWorkflowIndicator(null);
+  await refreshWorkflows();
+  toast(`Workflow #${workflowId} set to inactive`);
+  return true;
 }
 
 function templateRow(tpl) {
@@ -922,45 +1166,36 @@ function templateRow(tpl) {
 
 async function refreshWorkflows() {
   const items = await api("/workflows?active_only=true");
-  const workflowListEl = $("workflow-list");
-  if (workflowListEl) {
-    workflowListEl.innerHTML = items.length ? items.map(workflowRow).join("") : "<div class='muted'>No workflows yet.</div>";
-  }
+  currentWorkflows = Array.isArray(items) ? items : [];
+  renderWorkflowList();
+
   const runWorkflowSelect = $("run-workflow-id");
   const editorWorkflowSelect = $("editor-workflow-id");
   if (runWorkflowSelect) {
-    runWorkflowSelect.innerHTML =
-      `<option value="">Select workflow...</option>${items.map(workflowOption).join("")}`;
+    const currentValue = runWorkflowSelect.value;
+    runWorkflowSelect.innerHTML = `<option value="">Select workflow...</option>${currentWorkflows.map(workflowOption).join("")}`;
+    if (currentValue && currentWorkflows.some((item) => String(item.id) === String(currentValue))) {
+      runWorkflowSelect.value = currentValue;
+    }
   }
   if (editorWorkflowSelect) {
-    const current = editorWorkflowSelect.value;
-    editorWorkflowSelect.innerHTML =
-      `<option value="">Select workflow...</option>${items.map(workflowOption).join("")}`;
-    if (current) {
-      editorWorkflowSelect.value = current;
+    const currentValue = editorWorkflowSelect.value;
+    editorWorkflowSelect.innerHTML = `<option value="">Select workflow...</option>${currentWorkflows.map(workflowOption).join("")}`;
+    if (currentValue && currentWorkflows.some((item) => String(item.id) === String(currentValue))) {
+      editorWorkflowSelect.value = currentValue;
     }
   }
+
   updateRunControlsState();
-  if (workflowListEl) {
-    const canLoadDetails = Boolean($("selected-workflow-id") && $("workflow-details") && $("workflow-versions"));
-    document.querySelectorAll("#workflow-list .item.clickable").forEach((el) => {
-      el.addEventListener("click", () => {
-        const workflowId = Number(el.getAttribute("data-workflow-id"));
-        setValueIfPresent("selected-workflow-id", workflowId);
-        setSelectedWorkflowListItem(workflowId);
-        if (canLoadDetails) {
-          loadWorkflowDetails(workflowId);
-        }
-      });
-    });
-    const selectedId = Number(($("selected-workflow-id") || {}).value);
-    if (selectedId > 0) {
-      setSelectedWorkflowListItem(selectedId);
-    }
+
+  const selectedId = Number(($("selected-workflow-id") || {}).value || 0);
+  if (selectedId && !currentWorkflows.some((item) => Number(item.id) === selectedId)) {
+    setValueIfPresent("selected-workflow-id", "");
   }
+  setSelectedWorkflowListItem(Number(($("selected-workflow-id") || {}).value || 0) || null);
 }
 
-  async function refreshRunVersionsForWorkflow(workflowId, preferredVersionId = null) {
+async function refreshRunVersionsForWorkflow(workflowId, preferredVersionId = null) {
     const runVersionSelect = $("run-version-id");
     if (!runVersionSelect) {
       return;
@@ -1515,6 +1750,63 @@ async function loadWorkflowDetails(workflowId) {
   updateCurrentWorkflowIndicator(workflow);
 }
 
+ensureWorkflowLayout();
+const workflowListElement = $("workflow-list");
+if (workflowListElement && !workflowListElement.dataset.bound) {
+  workflowListElement.dataset.bound = "true";
+  workflowListElement.addEventListener("click", async (event) => {
+    const actionButton = event.target.closest("[data-action][data-workflow-id]");
+    if (actionButton) {
+      const workflowId = Number(actionButton.getAttribute("data-workflow-id"));
+      if (actionButton.getAttribute("data-action") === "edit") {
+        goToWorkflowEditor(workflowId);
+      }
+      if (actionButton.getAttribute("data-action") === "delete") {
+        try {
+          await deleteWorkflowById(workflowId);
+        } catch (err) {
+          toast(err.message, true);
+        }
+      }
+      return;
+    }
+
+    const row = event.target.closest(".workflow-row[data-workflow-id]");
+    if (!row) {
+      return;
+    }
+    const workflowId = Number(row.getAttribute("data-workflow-id"));
+    try {
+      await selectWorkflow(workflowId);
+    } catch (err) {
+      toast(err.message, true);
+    }
+  });
+  workflowListElement.addEventListener("keydown", async (event) => {
+    if (event.key !== "Enter" && event.key !== " ") {
+      return;
+    }
+    const row = event.target.closest(".workflow-row[data-workflow-id]");
+    if (!row) {
+      return;
+    }
+    event.preventDefault();
+    try {
+      await selectWorkflow(Number(row.getAttribute("data-workflow-id")));
+    } catch (err) {
+      toast(err.message, true);
+    }
+  });
+}
+const workflowSearchInput = $("workflow-search");
+if (workflowSearchInput && !workflowSearchInput.dataset.bound) {
+  workflowSearchInput.dataset.bound = "true";
+  workflowSearchInput.addEventListener("input", () => renderWorkflowList());
+}
+on("btn-open-create-workflow", "click", () => {
+  openWorkflowCreatePanel();
+});
+
 on("btn-create-workflow", "click", async () => {
   try {
     const payload = {
@@ -1623,37 +1915,13 @@ on("btn-edit-workflow", "click", (event) => {
     toast("Load a workflow first", true);
     return;
   }
-  window.location.href = editorUrlFor(workflowId);
+  goToWorkflowEditor(workflowId);
 });
 
   on("btn-delete-workflow", "click", async () => {
-    try {
-      const workflowId = Number(($("editor-workflow-id") || $("selected-workflow-id") || {}).value);
-      if (!workflowId) {
-        throw new Error("Select a workflow first");
-      }
-      await api(`/workflows/${workflowId}`, { method: "DELETE" });
-      setValueIfPresent("editor-workflow-id", "");
-    setValueIfPresent("selected-workflow-id", "");
-    setValueIfPresent("ver-workflow-id", "");
-    setValueIfPresent("ver-current-version-id", "");
-    if ($("ver-revision-id")) {
-      setValueIfPresent("ver-revision-id", "");
-    }
-    currentWorkflowVersions = [];
-    populateRevisionDropdown([]);
-    updateWorkflowInfoPanel(null, null);
-    updateVersionPrimaryActions();
-      setValueIfPresent("run-workflow-id", "");
-      setValueIfPresent("run-version-id", "");
-      clearRunMonitorPreview();
-      setSelectedWorkflowListItem(null);
-      if ($("workflow-details")) {
-        $("workflow-details").textContent = "";
-      }
-      updateCurrentWorkflowIndicator(null);
-      await refreshWorkflows();
-    toast(`Workflow #${workflowId} set to inactive`);
+  try {
+    const workflowId = Number(($("editor-workflow-id") || $("selected-workflow-id") || {}).value);
+    await deleteWorkflowById(workflowId);
   } catch (err) {
     toast(err.message, true);
   }
@@ -1797,6 +2065,7 @@ on("ver-definition", "change", () => {
 
 on("btn-trigger-run", "click", async () => {
   try {
+    setRunTriggerButtonState({ label: "Starting run...", disabled: true });
     const payload = {
       workflow_version_id: Number($("run-version-id").value),
       inputs: buildRunInputsPayload(),
@@ -1805,8 +2074,15 @@ on("btn-trigger-run", "click", async () => {
     $("run-created").textContent = `Created run #${run.id} status=${run.status}`;
     $("monitor-run-id").value = run.id;
     await loadRunMonitor(run.id);
+    setRunTriggerButtonState({ label: `Run #${run.id} started`, disabled: true, cooldownMs: 1000 });
     toast(`Run queued: #${run.id}`);
   } catch (err) {
+    runTriggerCooldownUntil = 0;
+    const triggerBtn = $("btn-trigger-run");
+    if (triggerBtn && triggerBtn.dataset.defaultLabel) {
+      triggerBtn.textContent = triggerBtn.dataset.defaultLabel;
+    }
+    updateRunControlsState();
     toast(err.message, true);
   }
 });

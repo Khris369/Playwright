@@ -8,12 +8,17 @@
 </head>
 <body>
   <header class="topbar">
-    <h1>Workflow Builder</h1>
-    <nav id="dashboard-admin-actions" class="topbar-actions" hidden>
-      <a class="btn-secondary btn-sm" href="/ui/users">User Management</a>
-      <button id="dashboard-logout-button" class="btn-secondary btn-sm" type="button">Logout</button>
-    </nav>
-    <span id="api-status" class="badge">Checking API...</span>
+    <div class="topbar-copy">
+      <h1>Workflow Builder</h1>
+      <p class="topbar-subtitle">Create, manage, edit, and run workflow automations.</p>
+    </div>
+    <div class="topbar-right">
+      <nav id="dashboard-admin-actions" class="topbar-actions" hidden>
+        <a class="btn-secondary btn-sm" href="/ui/users">User Management</a>
+        <button id="dashboard-logout-button" class="btn-secondary btn-sm" type="button">Logout</button>
+      </nav>
+      <span id="api-status" class="badge">Checking API...</span>
+    </div>
   </header>
 
   <nav class="tabs" role="tablist" aria-label="UI sections">

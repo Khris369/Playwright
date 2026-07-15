@@ -1312,6 +1312,10 @@ body.json-sidebar-open .json-sidebar-overlay {
   font-size: 13px;
   font-weight: 600;
 }
+
+#btn-trigger-run:disabled {
+  opacity: 1;
+}
 .monitor-title-row {
   align-items: center;
 }
@@ -1490,5 +1494,234 @@ body.json-sidebar-open .json-sidebar-overlay {
   .runner-config-grid,
   .monitor-load-row {
     grid-template-columns: 1fr;
+  }
+}
+
+.topbar-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.topbar-subtitle {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+}
+
+.workflows-card {
+  display: grid;
+  gap: 14px;
+}
+
+.workflows-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.workflows-header h2 {
+  margin-bottom: 4px;
+}
+
+.workflows-toolbar {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.workflows-toolbar button,
+.create-workflow-actions button,
+.workflow-cell-actions button {
+  width: auto;
+}
+
+.workflow-create-panel {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fcfdff;
+  padding: 12px;
+}
+
+.workflow-create-panel:not([open]) {
+  display: none;
+}
+
+.workflow-create-panel summary {
+  display: none;
+}
+
+.create-workflow-body {
+  display: grid;
+  gap: 10px;
+}
+
+.create-workflow-actions {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.workflow-controls {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.workflow-controls input {
+  max-width: 320px;
+}
+
+.workflow-list-shell {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.workflow-table {
+  display: grid;
+}
+
+.workflow-table-head {
+  background: #f8fbff;
+  border-bottom: 1px solid var(--line);
+}
+
+.workflow-row {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 2fr) 140px 180px 140px;
+  align-items: center;
+}
+
+.workflow-row-head {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.workflow-table-body .workflow-row + .workflow-row {
+  border-top: 1px solid #edf2f8;
+}
+
+.workflow-cell {
+  min-width: 0;
+  padding: 12px 14px;
+}
+
+.workflow-cell-name {
+  font-weight: 600;
+}
+
+.workflow-cell-created,
+.workflow-cell-id {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.workflow-cell-actions {
+  display: flex;
+  gap: 15px;
+  justify-content: flex-end;
+}
+
+.workflow-status-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid #cfe0f3;
+  background: #f3f9ff;
+  color: #245b8f;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.btn-link-inline {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.btn-danger-outline {
+  padding: 6px 10px;
+  border: 1px solid #e2b1b1;
+  border-radius: 8px;
+  background: #fff;
+  color: var(--err);
+}
+
+.btn-danger-outline:hover {
+  background: #fff5f5;
+  border-color: #d38383;
+}
+
+.workflow-row.is-selected {
+  background: #eef6ff;
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.workflow-empty {
+  padding: 18px 14px;
+}
+
+.workflow-selection-actions {
+  display: none;
+}
+
+@media (max-width: 920px) {
+  .topbar {
+    align-items: flex-start;
+  }
+
+  .topbar-right,
+  .workflows-header,
+  .workflows-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .workflow-controls input {
+    max-width: none;
+  }
+
+  .workflow-row {
+    grid-template-columns: 88px minmax(0, 1.8fr) 120px 150px 120px;
+  }
+}
+
+@media (max-width: 720px) {
+  .workflow-row,
+  .workflow-row-head {
+    grid-template-columns: 1fr;
+  }
+
+  .workflow-row-head {
+    display: none;
+  }
+
+  .workflow-table-body .workflow-row {
+    gap: 2px;
+    padding: 10px 0;
+  }
+
+  .workflow-cell {
+    padding: 4px 14px;
+  }
+
+  .workflow-cell-actions {
+    justify-content: flex-start;
+    padding-top: 8px;
   }
 }
