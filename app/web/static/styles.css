@@ -1292,6 +1292,10 @@ body.json-sidebar-open .json-sidebar-overlay {
 .json-status.is-invalid {
   color: #991b1b;
 }
+.input-invalid {
+  border-color: #dc2626 !important;
+  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.12);
+}
 .runner-trigger-footer {
   position: sticky;
   bottom: 0;
@@ -1348,6 +1352,68 @@ body.json-sidebar-open .json-sidebar-overlay {
 .run-live-note {
   color: #1d4ed8 !important;
   font-weight: 700;
+}
+
+.auth-page {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: #f5f8fc;
+}
+.auth-card {
+  width: min(440px, 100%);
+}
+.auth-card h1 {
+  margin-top: 0;
+}
+.auth-form,
+.user-form,
+.user-card-form {
+  display: grid;
+  gap: 10px;
+}
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.users-page {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
+  gap: 16px;
+}
+.users-list {
+  display: grid;
+  gap: 10px;
+}
+.user-card {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+.user-card-title {
+  display: grid;
+  gap: 2px;
+}
+.user-card-title small {
+  color: var(--muted);
+}
+.user-card-form {
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+.user-card-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+@media (max-width: 900px) {
+  .users-page {
+    grid-template-columns: 1fr;
+  }
 }
 .failure-banner {
   padding: 12px 14px;

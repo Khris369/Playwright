@@ -15,6 +15,7 @@ class WorkflowRunResponse(BaseModel):
     id: int
     workflow_id: int
     workflow_version_id: int
+    created_by_user_id: int | None = None
     status: str
     trigger_source: str
     inputs_json: dict[str, Any] | None = None
@@ -45,6 +46,7 @@ class WorkflowStepRunResponse(BaseModel):
 class WorkflowRunArtifactResponse(BaseModel):
     id: int
     workflow_run_id: int
+    created_by_user_id: int | None = None
     step_run_id: int | None = None
     artifact_type: str
     file_path: str

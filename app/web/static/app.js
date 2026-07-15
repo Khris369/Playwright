@@ -876,10 +876,29 @@ async function checkApi() {
   }
 }
 
+async function loadCurrentUser() {
+  try {
+    const user = await api("/auth/me");
+    const adminActions = $("dashboard-admin-actions");
+    if (adminActions) {
+      adminActions.hidden = String(user?.role || "") !== "admin";
+    }
+    return user;
+  } catch (err) {
+    if (String(err.message || "").startsWith("401 ")) {
+      window.location.href = "/login";
+      return null;
+    }
+    throw err;
+  }
+}
+
 function workflowRow(wf) {
+  const updatedAt = wf.updated_at || wf.created_at || "";
+  const updatedBy = wf.updated_by_display_name || (wf.updated_by_user_id ? `user #${wf.updated_by_user_id}` : "system");
   return `<div class="item clickable" data-workflow-id="${wf.id}">
     <div><strong>#${wf.id}</strong> ${wf.name || "(unnamed)"}</div>
-    <div class="muted">status=${wf.status || ""} created=${wf.created_at || ""}</div>
+    <div class="muted">status=${wf.status || ""} updated=${updatedAt} by=${updatedBy}</div>
   </div>`;
 }
 
@@ -1946,6 +1965,14 @@ on("btn-troubleshoot-run", "click", async () => {
   }
 });
 
+on("dashboard-logout-button", "click", async () => {
+  try {
+    await api("/auth/logout", { method: "POST" });
+  } finally {
+    window.location.href = "/login";
+  }
+});
+
 on("btn-editor-assistant-ask", "click", async () => {
   const loadingEl = $("editor-assistant-loading");
   const askBtn = $("btn-editor-assistant-ask");
@@ -1991,7 +2018,8 @@ on("btn-editor-assistant-ask", "click", async () => {
   }
 });
 
-  checkApi();
+loadCurrentUser().catch((err) => toast(err.message, true));
+checkApi();
 if ($("workflow-list") || $("editor-workflow-id") || $("run-workflow-id")) {
   refreshWorkflows().then(async () => {
     const initial = getInitialQueryState();

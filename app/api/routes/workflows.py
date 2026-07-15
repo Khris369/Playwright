@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
+from app.core.auth import optional_current_user
 from app.schemas.workflow import (
     WorkflowCreate,
     WorkflowResponse,
@@ -18,8 +19,11 @@ router = APIRouter(prefix="/workflows", tags=["workflows"])
 
 
 @router.post("", response_model=WorkflowResponse, status_code=status.HTTP_201_CREATED)
-def create_workflow(payload: WorkflowCreate) -> WorkflowResponse:
-    row = WorkflowRepository.create_workflow(payload)
+def create_workflow(
+    payload: WorkflowCreate,
+    user: dict | None = Depends(optional_current_user),
+) -> WorkflowResponse:
+    row = WorkflowRepository.create_workflow(payload, int(user["id"]) if user else None)
     return WorkflowResponse(**row)
 
 
@@ -45,10 +49,12 @@ def get_workflow(workflow_id: int) -> WorkflowResponse:
     status_code=status.HTTP_201_CREATED,
 )
 def create_workflow_version(
-    workflow_id: int, payload: WorkflowVersionCreate
+    workflow_id: int,
+    payload: WorkflowVersionCreate,
+    user: dict | None = Depends(optional_current_user),
 ) -> WorkflowVersionResponse:
     try:
-        row = WorkflowVersionRepository.create(workflow_id, payload)
+        row = WorkflowVersionRepository.create(workflow_id, payload, int(user["id"]) if user else None)
     except ValueError as exc:
         if str(exc) == "workflow_not_found":
             raise HTTPException(
@@ -80,10 +86,12 @@ def get_workflow_version(version_id: int) -> WorkflowVersionResponse:
 
 @router.put("/versions/{version_id}", response_model=WorkflowVersionResponse)
 def update_workflow_version(
-    version_id: int, payload: WorkflowVersionUpdate
+    version_id: int,
+    payload: WorkflowVersionUpdate,
+    user: dict | None = Depends(optional_current_user),
 ) -> WorkflowVersionResponse:
     try:
-        row = WorkflowVersionRepository.update(version_id, payload)
+        row = WorkflowVersionRepository.update(version_id, payload, int(user["id"]) if user else None)
     except VersionConflictError as exc:
         raise HTTPException(status_code=409, detail={"code": exc.code, "current_lock_version": exc.current_lock_version}) from exc
     except GraphValidationError as exc:
@@ -95,9 +103,19 @@ def update_workflow_version(
     return WorkflowVersionResponse(**row)
 
 
-def _set_published(version_id: int, payload: WorkflowVersionLockRequest, published: bool) -> WorkflowVersionResponse:
+def _set_published(
+    version_id: int,
+    payload: WorkflowVersionLockRequest,
+    published: bool,
+    user: dict | None,
+) -> WorkflowVersionResponse:
     try:
-        row = WorkflowVersionRepository.set_published(version_id, payload.expected_lock_version, published)
+        row = WorkflowVersionRepository.set_published(
+            version_id,
+            payload.expected_lock_version,
+            published,
+            int(user["id"]) if user else None,
+        )
     except VersionConflictError as exc:
         raise HTTPException(status_code=409, detail={"code": exc.code, "current_lock_version": exc.current_lock_version}) from exc
     except GraphValidationError as exc:
@@ -108,13 +126,21 @@ def _set_published(version_id: int, payload: WorkflowVersionLockRequest, publish
 
 
 @router.post("/versions/{version_id}/publish", response_model=WorkflowVersionResponse)
-def publish_workflow_version(version_id: int, payload: WorkflowVersionLockRequest) -> WorkflowVersionResponse:
-    return _set_published(version_id, payload, True)
+def publish_workflow_version(
+    version_id: int,
+    payload: WorkflowVersionLockRequest,
+    user: dict | None = Depends(optional_current_user),
+) -> WorkflowVersionResponse:
+    return _set_published(version_id, payload, True, user)
 
 
 @router.post("/versions/{version_id}/unpublish", response_model=WorkflowVersionResponse)
-def unpublish_workflow_version(version_id: int, payload: WorkflowVersionLockRequest) -> WorkflowVersionResponse:
-    return _set_published(version_id, payload, False)
+def unpublish_workflow_version(
+    version_id: int,
+    payload: WorkflowVersionLockRequest,
+    user: dict | None = Depends(optional_current_user),
+) -> WorkflowVersionResponse:
+    return _set_published(version_id, payload, False, user)
 
 
 @router.delete("/{workflow_id}", status_code=status.HTTP_204_NO_CONTENT)

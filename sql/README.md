@@ -1,19 +1,39 @@
 # SQL Convention
 
-- `001_init.sql`: baseline table creation for a fresh database.
-- `002_*.sql`, `003_*.sql`, ...: additive schema updates for existing databases.
-- Keep files additive and ordered.
-- In this project we use schema-first SQL files (no migration framework required).
-- Current SQL style: minimal DDL with `AUTO_INCREMENT` primary keys for repository `lastrowid` usage.
+This project uses plain ordered SQL files instead of a migration framework.
 
-## Current Ordered Files
+## Fresh Install
+
+For a new database, apply only:
+
 1. `001_init.sql`
-2. `002_schema_versions.sql` (compatibility no-op; consolidated into `001`)
-3. `003_step_types.sql` (compatibility no-op; consolidated into `001`)
-4. `004_step_types_ticket_steps.sql` (compatibility no-op; consolidated into `003`)
-5. `005_step_types_click_by_role.sql` (compatibility no-op; consolidated into `003`)
-6. `006_run_arg_presets.sql` (compatibility no-op; consolidated into `001`)
-7. `007_run_arg_presets_is_active.sql` (additive safety migration for pre-consolidation DBs)
-# Graph editor migration
 
-`008_workflow_graph_versioning.sql` adds optimistic-locking columns and indexes for schema-version-2 graph definitions. It is intentionally not applied automatically.
+`001_init.sql` contains the current complete schema, including:
+
+- users
+- workflows and workflow versions
+- workflow runs and step runs
+- workflow run artifacts
+- workflow templates
+- schema versions
+- step types and current default seeds
+- run argument presets
+- account ownership columns added for future auth
+
+## Existing Database Updates
+
+For databases that were initialized before the latest consolidated schema, apply the update files in order:
+
+1. `007_run_arg_presets_is_active.sql`
+2. `008_workflow_graph_versioning.sql`
+3. `009_accounts.sql`
+4. `010_workflow_last_updated.sql`
+
+These files are retained only for existing installations.
+
+## File Policy
+
+- Keep `001_init.sql` as the complete first-time bootstrap.
+- Keep only additive update files that existing databases still need.
+- Do not add no-op compatibility files.
+- Back up the database before applying update files manually.

@@ -14,6 +14,10 @@ class WorkflowCreate(BaseModel):
 
 class WorkflowResponse(BaseModel):
     id: int
+    owner_user_id: int | None = None
+    created_by_user_id: int | None = None
+    updated_by_user_id: int | None = None
+    updated_by_display_name: str | None = None
     name: str
     description: str | None = None
     status: str
@@ -38,6 +42,8 @@ class WorkflowVersionLockRequest(BaseModel):
 class WorkflowVersionResponse(BaseModel):
     id: int
     workflow_id: int
+    created_by_user_id: int | None = None
+    updated_by_user_id: int | None = None
     version_number: int
     is_published: bool
     definition_json: dict[str, Any]

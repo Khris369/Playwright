@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>User Management - WorkflowBuilder</title>
+  <link rel="stylesheet" href="/ui/static/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>User Management</h1>
+    <nav id="users-admin-actions" class="topbar-actions" hidden>
+      <a class="btn-secondary btn-sm" href="/ui">Dashboard</a>
+      <button id="logout-button" class="btn-secondary btn-sm" type="button">Logout</button>
+    </nav>
+  </header>
+
+  <main class="tab-content users-page">
+    <section class="card premium-card">
+      <div class="section-title-row">
+        <div>
+          <h2>Users</h2>
+          <p class="hint">Create accounts, update user details, and reset passwords.</p>
+        </div>
+        <button id="refresh-users" class="btn-secondary" type="button">Refresh</button>
+      </div>
+      <div id="users-alert" class="json-status muted">Loading users...</div>
+      <div id="users-list" class="users-list"></div>
+    </section>
+
+    <section class="card premium-card">
+      <h2>Create User</h2>
+      <form id="create-user-form" class="user-form">
+        <label>Email
+          <input id="create-email" type="email" required>
+        </label>
+        <label>Display name
+          <input id="create-name" required>
+        </label>
+        <label>Role
+          <select id="create-role">
+            <option value="user">user</option>
+            <option value="admin">admin</option>
+          </select>
+        </label>
+        <label>Status
+          <select id="create-status">
+            <option value="active">active</option>
+            <option value="inactive">inactive</option>
+          </select>
+        </label>
+        <label>Password
+          <input id="create-password" type="password" autocomplete="new-password" required>
+        </label>
+        <button class="btn-primary" type="submit">Create user</button>
+      </form>
+    </section>
+  </main>
+  <script src="/ui/static/users.js"></script>
+</body>
+</html>

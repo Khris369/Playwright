@@ -1,3 +1,0 @@
--- 005_step_types_click_by_role.sql
--- Retained for ordered compatibility.
--- `click_by_role` seed was consolidated into `001_init.sql`.

@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Login - WorkflowBuilder</title>
+  <link rel="stylesheet" href="/ui/static/styles.css">
+</head>
+<body>
+  <main class="auth-page">
+    <section class="card premium-card auth-card">
+      <h1>WorkflowBuilder</h1>
+      <p class="hint">Sign in to manage workflows and runs.</p>
+
+      <div id="login-alert" class="json-status muted">Enter your account credentials.</div>
+
+      <form id="login-form" class="auth-form">
+        <label>Email
+          <input id="login-email" type="email" autocomplete="username" required>
+        </label>
+        <label>Password
+          <input id="login-password" type="password" autocomplete="current-password" required>
+        </label>
+        <div id="login-form-status" class="json-status muted">Enter your email and password.</div>
+        <button class="btn-primary" type="submit">Sign in</button>
+      </form>
+
+      <details id="bootstrap-panel" class="preview-toggle">
+        <summary>First-time setup</summary>
+        <p class="hint">Use this only when no users exist yet. It creates the first admin account.</p>
+        <form id="bootstrap-form" class="auth-form">
+          <label>Admin email
+            <input id="bootstrap-email" type="email" autocomplete="off" required>
+          </label>
+          <label>Display name
+            <input id="bootstrap-name" autocomplete="off" required>
+          </label>
+          <label>Password
+            <input id="bootstrap-password" type="password" autocomplete="new-password" required minlength="12">
+          </label>
+          <div id="bootstrap-password-status" class="json-status muted">Password must be at least 12 characters.</div>
+          <button class="btn-secondary" type="submit">Create first admin</button>
+        </form>
+      </details>
+    </section>
+  </main>
+  <script src="/ui/static/auth.js"></script>
+</body>
+</html>
