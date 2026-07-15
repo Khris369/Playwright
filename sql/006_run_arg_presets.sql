@@ -1,0 +1,3 @@
+-- 006_run_arg_presets.sql
+-- Retained for ordered compatibility.
+-- `run_arg_presets` table creation (including `isActive`) was consolidated into `001_init.sql`.

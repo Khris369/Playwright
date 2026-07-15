@@ -1,0 +1,3 @@
+-- 002_schema_versions.sql
+-- Retained for ordered compatibility.
+-- `schema_versions` table creation was consolidated into `001_init.sql`.

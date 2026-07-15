@@ -1,0 +1,3 @@
+-- 003_step_types.sql
+-- Retained for ordered compatibility.
+-- `step_types` table creation and default seeds were consolidated into `001_init.sql`.

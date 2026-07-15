@@ -1,0 +1,69 @@
+[
+  {
+    "scenario_name": "Enquiry about Roaming",
+    "brand": "OLNO",
+    "fields": [
+      {
+        "label": "Requestor Name",
+        "type": "text",
+        "value": "Automation Requestor"
+      },
+      {
+        "label": "Email Address",
+        "type": "text",
+        "value": "automation@example.com"
+      },
+      {
+        "label": "Contact Number",
+        "type": "text",
+        "value": "60123456789"
+      }
+    ]
+  },
+  {
+    "scenario_name": "Enquiry about Roaming",
+    "brand": "Digi",
+    "fields": [
+      {
+        "label": "Reason/Cause",
+        "selector": "select[name='ProblemCause']",
+        "type": "dropdown",
+        "value": "Enquiry"
+      },
+      {
+        "label": "Resolution",
+        "selector": "select[name='Resolution']",
+        "type": "dropdown",
+        "value": "Information Provided"
+      },
+      {
+        "label": "Tag",
+        "selector": "select[name='Promo']",
+        "type": "dropdown",
+        "value": "CelcomDigi ONE plans"
+      },
+      {
+        "label": "Reference ID",
+        "type": "text",
+        "value": "AUTO-REF-001"
+      },
+      {
+        "label": "Description",
+        "type": "text",
+        "value": "Created by Playwright automation test."
+      }
+    ]
+  },
+  {
+    "scenario_name": "Enquiry about Roaming",
+    "brand": "Celcom",
+    "fields": [
+      {
+        "label": "Charges Type",
+        "selector": "select[name='chargesType']",
+        "type": "dropdown",
+        "value": "Roaming"
+      }
+    ]
+  }
+]

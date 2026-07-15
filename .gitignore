@@ -13,3 +13,7 @@ editor/vite.config.js
 editor/vite.config.d.ts
 .tokensave
 app/web/artifacts/
+tests
+
+knowledge/*
+!knowledge/LOCAL_SETUP.md

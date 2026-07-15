@@ -1,0 +1,3 @@
+-- 004_step_types_ticket_steps.sql
+-- Retained for ordered compatibility.
+-- Ticket step type seeds were consolidated into `001_init.sql`.
