@@ -1,0 +1,15 @@
+__pycache__/
+**/__pycache__/
+app/core/__pycache__
+*.py[cod]
+.vscode
+.env
+allure-results-call/
+venv/
+plan/
+editor/node_modules/
+editor/*.tsbuildinfo
+editor/vite.config.js
+editor/vite.config.d.ts
+.tokensave
+app/web/artifacts/
