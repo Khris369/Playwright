@@ -1158,6 +1158,29 @@ body.json-sidebar-open .json-sidebar-overlay {
   justify-content: space-between;
   gap: 12px;
 }
+.runner-input-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.runner-mode-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+.runner-mode-control select {
+  width: auto;
+  min-width: 150px;
+  margin: 0;
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
 .runner-preset-box {
   margin: 0;
   background: #f9fbfe;
@@ -1290,6 +1313,9 @@ body.json-sidebar-open .json-sidebar-overlay {
   .section-title-row {
     flex-direction: column;
     align-items: stretch;
+  }
+  .runner-input-actions {
+    justify-content: flex-start;
   }
   .monitor-load-row {
     min-width: 0;

@@ -129,7 +129,17 @@
           <div class="runner-section runner-inputs-section">
             <div class="section-title-row">
               <h3 class="section-title">Input Variables JSON</h3>
-              <button id="btn-generate-run-inputs" class="btn-text btn-sm" type="button">Generate Template</button>
+              <div class="runner-input-actions">
+                <label class="runner-mode-control" for="run-browser-mode">
+                  Browser
+                  <select id="run-browser-mode" aria-label="Browser display mode">
+                    <option value="">Use server default</option>
+                    <option value="headed">Headed</option>
+                    <option value="headless">Headless</option>
+                  </select>
+                </label>
+                <button id="btn-generate-run-inputs" class="btn-text btn-sm" type="button">Generate Template</button>
+              </div>
             </div>
             <div class="json-editor-shell">
               <div id="run-inputs-line-numbers" class="json-line-numbers" aria-hidden="true">1</div>

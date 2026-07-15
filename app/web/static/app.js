@@ -688,6 +688,22 @@ function updateRunJsonStatus() {
   }
 }
 
+function buildRunInputsPayload() {
+  const inputs = JSON.parse(($("run-inputs") || {}).value || "{}");
+  if (!inputs || typeof inputs !== "object" || Array.isArray(inputs)) {
+    throw new Error("Input Variables JSON must be an object");
+  }
+  const browserMode = String(($("run-browser-mode") || {}).value || "");
+  delete inputs.headless;
+  delete inputs.headed;
+  if (browserMode === "headless") {
+    inputs.headless = true;
+  } else if (browserMode === "headed") {
+    inputs.headed = true;
+  }
+  return inputs;
+}
+
 function runPresetOption(preset) {
   const scope =
     preset.workflow_version_id
@@ -1583,7 +1599,7 @@ on("btn-trigger-run", "click", async () => {
   try {
     const payload = {
       workflow_version_id: Number($("run-version-id").value),
-      inputs: JSON.parse($("run-inputs").value || "{}"),
+      inputs: buildRunInputsPayload(),
     };
     const run = await api("/workflow-runs", { method: "POST", body: JSON.stringify(payload) });
     $("run-created").textContent = `Created run #${run.id} status=${run.status}`;

@@ -125,7 +125,7 @@ class WorkflowRunnerService:
         try:
             from playwright.sync_api import sync_playwright
 
-            headless_default = False
+            headless_default = settings.playwright_headless
             headless = _parse_bool(inputs.get("headless"), headless_default)
             if "headed" in inputs:
                 headless = not _parse_bool(inputs.get("headed"), True)

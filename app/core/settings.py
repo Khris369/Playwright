@@ -10,6 +10,7 @@ class Settings:
     app_name: str
     environment: str
     debug: bool
+    playwright_headless: bool
     workflow_artifacts_enabled: bool
     workflow_trace_enabled: bool
     workflow_final_screenshot_enabled: bool
@@ -24,6 +25,7 @@ def get_settings() -> Settings:
         app_name=str(cfg["name"]),
         environment=str(cfg["env"]),
         debug=bool(cfg["debug"]),
+        playwright_headless=bool(cfg["playwright_headless"]),
         workflow_artifacts_enabled=bool(cfg["workflow_artifacts_enabled"]),
         workflow_trace_enabled=bool(cfg["workflow_trace_enabled"]),
         workflow_final_screenshot_enabled=bool(cfg["workflow_final_screenshot_enabled"]),
