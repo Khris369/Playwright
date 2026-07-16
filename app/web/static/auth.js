@@ -10,13 +10,13 @@ function setAlert(message, isError = false) {
 function setLoginFormStatus(message = "", isError = false) {
   const el = $("login-form-status");
   if (!el) return;
-  el.textContent = message || "Enter your email and password.";
+  el.textContent = message || "Enter your username and password.";
   el.classList.toggle("is-invalid", isError);
   el.classList.toggle("is-valid", !isError && Boolean(message));
 }
 
 function clearLoginFieldErrors() {
-  $("login-email")?.classList.remove("input-invalid");
+  $("login-username")?.classList.remove("input-invalid");
   $("login-password")?.classList.remove("input-invalid");
   setLoginFormStatus();
 }
@@ -83,16 +83,16 @@ $("login-form").addEventListener("submit", async (event) => {
     await api("/auth/login", {
       method: "POST",
       body: JSON.stringify({
-        email: $("login-email").value,
+        username: $("login-username").value,
         password: $("login-password").value,
       }),
     });
     window.location.href = "/ui";
   } catch (error) {
     if (error.status === 401) {
-      $("login-email")?.classList.add("input-invalid");
+      $("login-username")?.classList.add("input-invalid");
       $("login-password")?.classList.add("input-invalid");
-      setLoginFormStatus("Invalid email or password.", true);
+      setLoginFormStatus("Invalid username or password.", true);
     }
     setAlert(error.message, true);
   }
@@ -110,7 +110,8 @@ $("bootstrap-form").addEventListener("submit", async (event) => {
     await api("/auth/bootstrap-admin", {
       method: "POST",
       body: JSON.stringify({
-        email: $("bootstrap-email").value,
+        username: $("bootstrap-username").value,
+        email: $("bootstrap-email").value || null,
         display_name: $("bootstrap-name").value,
         password: password.value,
         role: "admin",
@@ -135,5 +136,5 @@ $("bootstrap-password")?.addEventListener("input", () => {
   }
 });
 
-$("login-email")?.addEventListener("input", clearLoginFieldErrors);
+$("login-username")?.addEventListener("input", clearLoginFieldErrors);
 $("login-password")?.addEventListener("input", clearLoginFieldErrors);

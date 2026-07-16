@@ -37,7 +37,7 @@ class SessionRepository:
         with get_db_cursor() as (_, cursor):
             cursor.execute(
                 """
-                SELECT u.id, u.email, u.display_name, u.role, u.status,
+                SELECT u.id, u.username, u.email, u.display_name, u.role, u.status,
                        u.last_login_at, u.created_at, u.updated_at
                 FROM user_sessions s
                 JOIN users u ON u.id = s.user_id

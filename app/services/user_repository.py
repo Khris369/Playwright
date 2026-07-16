@@ -6,7 +6,7 @@ from app.services.passwords import hash_password
 
 
 SELECT_COLUMNS = """
-    id, email, display_name, role, status, last_login_at, created_at, updated_at
+    id, username, email, display_name, role, status, last_login_at, created_at, updated_at
 """
 
 
@@ -23,11 +23,12 @@ class UserRepository:
         with get_db_cursor() as (_, cursor):
             cursor.execute(
                 """
-                INSERT INTO users (email, display_name, password_hash, role, status)
-                VALUES (%s, %s, %s, %s, %s)
+                INSERT INTO users (username, email, display_name, password_hash, role, status)
+                VALUES (%s, %s, %s, %s, %s, %s)
                 """,
                 (
-                    payload.email.strip().lower(),
+                    payload.username.strip().lower(),
+                    payload.email.strip().lower() if payload.email else None,
                     payload.display_name,
                     password_hash,
                     payload.role,
@@ -47,14 +48,14 @@ class UserRepository:
             return cursor.fetchone()
 
     @staticmethod
-    def get_by_email(email: str, include_password_hash: bool = False) -> dict | None:
+    def get_by_username(username: str, include_password_hash: bool = False) -> dict | None:
         columns = SELECT_COLUMNS
         if include_password_hash:
             columns = f"{SELECT_COLUMNS}, password_hash"
         with get_db_cursor() as (_, cursor):
             cursor.execute(
-                f"SELECT {columns} FROM users WHERE email = %s",
-                (email.strip().lower(),),
+                f"SELECT {columns} FROM users WHERE username = %s",
+                (username.strip().lower(),),
             )
             return cursor.fetchone()
 
@@ -78,11 +79,12 @@ class UserRepository:
             cursor.execute(
                 """
                 UPDATE users
-                SET email = %s, display_name = %s, role = %s, status = %s
+                SET username = %s, email = %s, display_name = %s, role = %s, status = %s
                 WHERE id = %s
                 """,
                 (
-                    payload.email.strip().lower(),
+                    payload.username.strip().lower(),
+                    payload.email.strip().lower() if payload.email else None,
                     payload.display_name,
                     payload.role,
                     payload.status,

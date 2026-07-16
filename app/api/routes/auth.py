@@ -30,11 +30,11 @@ def me(user: dict = Depends(current_user)) -> UserResponse:
 
 @router.post("/login", response_model=UserResponse)
 def login(payload: LoginRequest, response: Response) -> UserResponse:
-    user = UserRepository.get_by_email(payload.email, include_password_hash=True)
+    user = UserRepository.get_by_username(payload.username, include_password_hash=True)
     if user is None or not verify_password(payload.password, user.get("password_hash")):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password",
+            detail="Invalid username or password",
         )
     token, expires_at = SessionRepository.create(int(user["id"]))
     UserRepository.record_login(int(user["id"]))
@@ -59,6 +59,7 @@ def bootstrap_admin(payload: UserCreate, response: Response) -> UserResponse:
             detail="Bootstrap is only available before the first user is created",
         )
     admin_payload = UserCreate(
+        username=payload.username,
         email=payload.email,
         display_name=payload.display_name,
         password=payload.password,

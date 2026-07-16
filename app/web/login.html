@@ -15,13 +15,13 @@
       <div id="login-alert" class="json-status muted">Enter your account credentials.</div>
 
       <form id="login-form" class="auth-form">
-        <label>Email
-          <input id="login-email" type="email" autocomplete="username" required>
+        <label>Username
+          <input id="login-username" autocomplete="username" required minlength="3">
         </label>
         <label>Password
           <input id="login-password" type="password" autocomplete="current-password" required>
         </label>
-        <div id="login-form-status" class="json-status muted">Enter your email and password.</div>
+        <div id="login-form-status" class="json-status muted">Enter your username and password.</div>
         <button class="btn-primary" type="submit">Sign in</button>
       </form>
 
@@ -29,8 +29,11 @@
         <summary>First-time setup</summary>
         <p class="hint">Use this only when no users exist yet. It creates the first admin account.</p>
         <form id="bootstrap-form" class="auth-form">
-          <label>Admin email
-            <input id="bootstrap-email" type="email" autocomplete="off" required>
+          <label>Admin username
+            <input id="bootstrap-username" autocomplete="off" required minlength="3">
+          </label>
+          <label>Email (optional)
+            <input id="bootstrap-email" type="email" autocomplete="off">
           </label>
           <label>Display name
             <input id="bootstrap-name" autocomplete="off" required>

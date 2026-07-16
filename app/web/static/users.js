@@ -73,17 +73,19 @@ function renderUser(user) {
   const name = document.createElement("strong");
   name.textContent = user.display_name;
   const meta = document.createElement("small");
-  meta.textContent = `#${user.id} • ${user.email}`;
+  meta.textContent = `#${user.id} • ${user.username}${user.email ? ` • ${user.email}` : ""}`;
   title.append(name, meta);
 
   const form = document.createElement("form");
   form.className = "user-card-form";
+  const username = textInput(user.username);
   const email = textInput(user.email);
   const displayName = textInput(user.display_name);
   const role = selectInput(user.role, ["user", "admin"]);
   const status = selectInput(user.status, ["active", "inactive"]);
   form.append(
-    field("Email", email),
+    field("Username", username),
+    field("Email (optional)", email),
     field("Display name", displayName),
     field("Role", role),
     field("Status", status),
@@ -106,7 +108,8 @@ function renderUser(user) {
     await api(`/users/${user.id}`, {
       method: "PUT",
       body: JSON.stringify({
-        email: email.value,
+        username: username.value,
+        email: email.value || null,
         display_name: displayName.value,
         role: role.value,
         status: status.value,
@@ -151,7 +154,8 @@ $("create-user-form").addEventListener("submit", async (event) => {
   await api("/users", {
     method: "POST",
     body: JSON.stringify({
-      email: $("create-email").value,
+      username: $("create-username").value,
+      email: $("create-email").value || null,
       display_name: $("create-name").value,
       role: $("create-role").value,
       status: $("create-status").value,

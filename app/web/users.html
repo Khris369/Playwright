@@ -31,8 +31,11 @@
     <section class="card premium-card">
       <h2>Create User</h2>
       <form id="create-user-form" class="user-form">
-        <label>Email
-          <input id="create-email" type="email" required>
+        <label>Username
+          <input id="create-username" required minlength="3">
+        </label>
+        <label>Email (optional)
+          <input id="create-email" type="email">
         </label>
         <label>Display name
           <input id="create-name" required>
