@@ -7,13 +7,7 @@
   <link rel="stylesheet" href="/ui/static/styles.css">
 </head>
 <body>
-  <header class="topbar">
-    <h1>User Management</h1>
-    <nav id="users-admin-actions" class="topbar-actions" hidden>
-      <a class="btn-secondary btn-sm" href="/ui">Dashboard</a>
-      <button id="logout-button" class="btn-secondary btn-sm" type="button">Logout</button>
-    </nav>
-  </header>
+  <div data-app-navbar data-navbar-title="User Management"></div>
 
   <main class="tab-content users-page">
     <section class="card premium-card">
@@ -59,6 +53,7 @@
       </form>
     </section>
   </main>
+  <script src="/ui/static/navbar.js"></script>
   <script src="/ui/static/users.js"></script>
 </body>
 </html>

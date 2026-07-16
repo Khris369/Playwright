@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from app.schemas.user import UserCreate, UserUpdate
 from app.services.db import get_db_cursor
-from app.services.passwords import hash_password
+from app.services.passwords import hash_password, verify_password
 
 
 SELECT_COLUMNS = """
@@ -102,6 +102,19 @@ class UserRepository:
                 (password_hash, user_id),
             )
         return UserRepository.get(user_id)
+
+    @staticmethod
+    def change_password(user_id: int, current_password: str, new_password: str) -> bool:
+        with get_db_cursor() as (_, cursor):
+            cursor.execute("SELECT password_hash FROM users WHERE id = %s", (user_id,))
+            row = cursor.fetchone()
+            if row is None or not verify_password(current_password, row.get("password_hash")):
+                return False
+            cursor.execute(
+                "UPDATE users SET password_hash = %s WHERE id = %s",
+                (hash_password(new_password), user_id),
+            )
+        return True
 
     @staticmethod
     def record_login(user_id: int) -> None:

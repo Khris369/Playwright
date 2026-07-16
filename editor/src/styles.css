@@ -54,8 +54,19 @@ header h1 {
     margin: 0 auto 0 8px;
 }
 
-header a {
-    color: #b7d4ff;
+.app-shell>header>a[href="/ui"] {
+    display: inline-block;
+    border: 1px solid #31405e;
+    border-radius: 6px;
+    background: #17213a;
+    color: #e8efff;
+    padding: 7px 10px;
+    text-decoration: none;
+}
+
+.app-shell>header>a[href="/ui"]:hover {
+    border-color: #5f88d9;
+    background: #2a3f6c;
 }
 
 .editor-tabs {

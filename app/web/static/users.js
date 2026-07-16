@@ -169,7 +169,7 @@ $("create-user-form").addEventListener("submit", async (event) => {
 
 $("refresh-users").addEventListener("click", loadUsers);
 
-$("logout-button").addEventListener("click", async () => {
+$("logout-button")?.addEventListener("click", async () => {
   await api("/auth/logout", { method: "POST" });
   window.location.href = "/login";
 });
