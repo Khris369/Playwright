@@ -594,14 +594,18 @@ function renderStepBuilder() {
     const versionId = Number(params.get("run_version_id"));
     const tab = params.get("tab");
     const returnToEditor = params.get("return_to_editor");
+    const normalizedWorkflowId =
+      Number.isFinite(workflowId) && workflowId > 0 ? workflowId : null;
     return {
       tab,
-      workflowId: Number.isFinite(workflowId) && workflowId > 0 ? workflowId : null,
+      workflowId: normalizedWorkflowId,
       versionId: Number.isFinite(versionId) && versionId > 0 ? versionId : null,
       returnToEditor:
         typeof returnToEditor === "string" && returnToEditor.startsWith("/ui/editor")
           ? returnToEditor
-          : null,
+          : normalizedWorkflowId
+            ? editorUrlFor(normalizedWorkflowId)
+            : null,
     };
   }
 
@@ -610,8 +614,12 @@ function updateRunsBackLink(returnToEditor) {
   if (!backLink) {
     return;
   }
-  if (returnToEditor) {
-    backLink.href = returnToEditor;
+  const workflowId = Number(($("run-workflow-id") || {}).value);
+  const fallbackHref =
+    Number.isFinite(workflowId) && workflowId > 0 ? editorUrlFor(workflowId) : null;
+  const href = returnToEditor || fallbackHref;
+  if (href) {
+    backLink.href = href;
     backLink.hidden = false;
     return;
   }
@@ -2124,6 +2132,9 @@ on("btn-trigger-run", "click", async () => {
 on("run-workflow-id", "change", async () => {
   try {
     const workflowId = Number(($("run-workflow-id") || {}).value);
+    updateRunsBackLink(
+      Number.isFinite(workflowId) && workflowId > 0 ? editorUrlFor(workflowId) : null
+    );
     await refreshRunVersionsForWorkflow(workflowId);
     await refreshRunArgPresets();
   } catch (err) {
