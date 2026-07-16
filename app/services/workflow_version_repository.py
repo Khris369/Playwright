@@ -9,6 +9,8 @@ from app.engine.graph import compile_definition
 from app.schemas.workflow import WorkflowVersionCreate, WorkflowVersionUpdate
 from app.services.db import get_db_cursor
 
+# Repository for editable and published workflow definitions. Definitions are
+# compiled before persistence, and lock_version protects concurrent editor saves.
 
 @dataclass
 class VersionConflictError(RuntimeError):
@@ -17,6 +19,7 @@ class VersionConflictError(RuntimeError):
 
 
 def _decode(row: dict | None) -> dict | None:
+    """Normalize JSON and numeric database fields for API consumers."""
     if row is None:
         return None
     if isinstance(row.get("definition_json"), str):
@@ -27,6 +30,7 @@ def _decode(row: dict | None) -> dict | None:
 
 
 def _blank_definition() -> dict[str, Any]:
+    """Create the minimal valid graph used when no definition is supplied."""
     return {
         "schema_version": 2,
         "graph": {
@@ -55,6 +59,7 @@ def _select_columns_sql() -> str:
 
 
 def _touch_workflow(cursor, workflow_id: int, user_id: int | None) -> None:
+    """Update parent workflow audit metadata in the same transaction."""
     cursor.execute(
         """
         UPDATE workflows
@@ -69,6 +74,7 @@ def _touch_workflow(cursor, workflow_id: int, user_id: int | None) -> None:
 class WorkflowVersionRepository:
     @staticmethod
     def create(workflow_id: int, payload: WorkflowVersionCreate, user_id: int | None = None) -> dict:
+        """Validate and insert a new version, optionally cloning a base version."""
         definition = payload.definition_json or _blank_definition()
         compile_definition(definition)
 
@@ -124,6 +130,7 @@ class WorkflowVersionRepository:
 
     @staticmethod
     def list(workflow_id: int) -> list[dict]:
+        """Return versions newest first for the workflow editor/history view."""
         with get_db_cursor() as (_, cursor):
             cursor.execute(
                 f"SELECT {_select_columns_sql()} FROM workflow_versions "
@@ -134,6 +141,7 @@ class WorkflowVersionRepository:
 
     @staticmethod
     def get(version_id: int) -> dict | None:
+        """Fetch one version and normalize its stored definition."""
         with get_db_cursor() as (_, cursor):
             cursor.execute(
                 f"SELECT {_select_columns_sql()} FROM workflow_versions WHERE id = %s",
@@ -143,6 +151,7 @@ class WorkflowVersionRepository:
 
     @staticmethod
     def update(version_id: int, payload: WorkflowVersionUpdate, user_id: int | None = None) -> dict | None:
+        """Update an unpublished version only when its lock version still matches."""
         compile_definition(payload.definition_json)
 
         with get_db_cursor() as (_, cursor):
@@ -185,6 +194,7 @@ class WorkflowVersionRepository:
         published: bool,
         user_id: int | None = None,
     ) -> dict | None:
+        """Publish or unpublish a version using optimistic concurrency checks."""
         with get_db_cursor() as (_, cursor):
             cursor.execute(
                 "SELECT workflow_id, definition_json, lock_version FROM workflow_versions WHERE id = %s FOR UPDATE",

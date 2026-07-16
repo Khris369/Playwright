@@ -22,10 +22,13 @@ from app.services.workflow_run_repository import WorkflowRunRepository
 from app.services.workflow_run_dispatcher import WorkflowRunDispatcher
 from app.services.workflow_runner import WorkflowRunnerService
 
+# Coordinates run APIs while keeping execution, persistence, and artifact path
+# rules in their respective services. Trace viewing uses a non-shell command.
 router = APIRouter(prefix="/workflow-runs", tags=["workflow-runs"])
 
 
 def _playwright_executable() -> str | None:
+    """Find the Playwright CLI beside the interpreter or on PATH."""
     local_exe = Path(sys.executable).with_name("playwright.exe")
     if local_exe.exists() and local_exe.is_file():
         return str(local_exe)
@@ -33,6 +36,7 @@ def _playwright_executable() -> str | None:
 
 
 def _open_trace_viewer(trace_path: Path) -> None:
+    """Open a validated trace archive using the local Playwright CLI."""
     executable = _playwright_executable()
     if executable is None:
         raise RuntimeError("Playwright CLI not found")
@@ -51,6 +55,7 @@ def list_workflow_runs(
     workflow_version_id: int | None = Query(default=None, ge=1),
     limit: int = Query(default=20, ge=1, le=100),
 ) -> list[WorkflowRunResponse]:
+    """List recent runs, optionally filtered to a workflow version."""
     return [WorkflowRunResponse(**row) for row in WorkflowRunRepository.list_runs(workflow_version_id, limit)]
 
 
@@ -59,6 +64,7 @@ def create_workflow_run(
     payload: WorkflowRunCreate,
     background_tasks: BackgroundTasks,
 ) -> WorkflowRunResponse:
+    """Validate and queue a run, then schedule its execution."""
     try:
         run_id = WorkflowRunnerService.run_workflow_version(
             version_id=payload.workflow_version_id,
@@ -91,6 +97,7 @@ def create_workflow_run(
 
 @router.get("/{run_id}", response_model=WorkflowRunResponse)
 def get_workflow_run(run_id: int) -> WorkflowRunResponse:
+    """Return one run or a not-found response."""
     run = WorkflowRunRepository.get_run(run_id)
     if run is None:
         raise HTTPException(
@@ -101,6 +108,7 @@ def get_workflow_run(run_id: int) -> WorkflowRunResponse:
 
 @router.post("/{run_id}/stop")
 def stop_workflow_run(run_id: int) -> dict[str, str]:
+    """Cancel queued work immediately or request cooperative cancellation."""
     run = WorkflowRunRepository.get_run(run_id)
     if run is None:
         raise HTTPException(
@@ -122,12 +130,14 @@ def stop_workflow_run(run_id: int) -> dict[str, str]:
 
 @router.get("/{run_id}/steps", response_model=list[WorkflowStepRunResponse])
 def list_workflow_run_steps(run_id: int) -> list[WorkflowStepRunResponse]:
+    """Return persisted step attempts for a run."""
     rows = WorkflowRunRepository.list_step_runs(run_id)
     return [WorkflowStepRunResponse(**row) for row in rows]
 
 
 @router.get("/{run_id}/artifacts", response_model=list[WorkflowRunArtifactResponse])
 def list_workflow_run_artifacts(run_id: int) -> list[WorkflowRunArtifactResponse]:
+    """List artifact metadata and construct client download URLs."""
     if WorkflowRunRepository.get_run(run_id) is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Workflow run not found"
@@ -144,6 +154,7 @@ def list_workflow_run_artifacts(run_id: int) -> list[WorkflowRunArtifactResponse
 
 @router.get("/{run_id}/artifacts/{artifact_id}")
 def download_workflow_run_artifact(run_id: int, artifact_id: int) -> FileResponse:
+    """Serve a run-owned artifact after containment and file checks."""
     artifact = WorkflowRunRepository.get_artifact(run_id, artifact_id)
     if artifact is None:
         raise HTTPException(
@@ -171,6 +182,7 @@ def download_workflow_run_artifact(run_id: int, artifact_id: int) -> FileRespons
 
 @router.post("/{run_id}/artifacts/{artifact_id}/open-trace")
 def open_workflow_run_trace(run_id: int, artifact_id: int) -> dict[str, str]:
+    """Launch only a run-owned ZIP trace through the local viewer."""
     artifact = WorkflowRunRepository.get_artifact(run_id, artifact_id)
     if artifact is None or str(artifact.get("artifact_type")) != "trace":
         raise HTTPException(
@@ -200,6 +212,7 @@ def open_workflow_run_trace(run_id: int, artifact_id: int) -> dict[str, str]:
 def troubleshoot_workflow_run(
     run_id: int, payload: TroubleshootRequest
 ) -> TroubleshootResponse:
+    """Send run diagnostics to the AI service and return structured advice."""
     run = WorkflowRunRepository.get_run(run_id)
     if run is None:
         raise HTTPException(

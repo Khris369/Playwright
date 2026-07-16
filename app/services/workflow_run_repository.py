@@ -5,6 +5,8 @@ from datetime import datetime
 
 from app.services.db import get_db_cursor
 
+# Repository boundary for workflow runs, step attempts, and artifact metadata.
+# JSON columns are decoded here so callers receive ordinary Python structures.
 
 class WorkflowRunRepository:
     @staticmethod
@@ -12,6 +14,7 @@ class WorkflowRunRepository:
         workflow_id: int, workflow_version_id: int, resolved_definition: dict,
         inputs: dict | None = None
     ) -> int:
+        """Insert an immutable run snapshot in the queued state."""
         with get_db_cursor() as (_, cursor):
             cursor.execute(
                 """
@@ -35,6 +38,7 @@ class WorkflowRunRepository:
 
     @staticmethod
     def list_runs(workflow_version_id: int | None = None, limit: int = 20) -> list[dict]:
+        """Return recent runs, optionally limited to one workflow version."""
         with get_db_cursor() as (_, cursor):
             query = """SELECT id, workflow_id, workflow_version_id, status, trigger_source,
                        inputs_json, resolved_definition_json, started_at, finished_at,
@@ -55,6 +59,7 @@ class WorkflowRunRepository:
 
     @staticmethod
     def mark_run_running(run_id: int) -> None:
+        """Mark a run as running without checking its previous state."""
         with get_db_cursor() as (_, cursor):
             cursor.execute(
                 """
@@ -67,6 +72,7 @@ class WorkflowRunRepository:
 
     @staticmethod
     def try_mark_run_running(run_id: int) -> bool:
+        """Atomically claim only a queued run, preventing duplicate workers."""
         with get_db_cursor() as (_, cursor):
             cursor.execute(
                 """
@@ -89,6 +95,7 @@ class WorkflowRunRepository:
         log_text: str | None = None,
         error_text: str | None = None,
     ) -> int:
+        """Record one attempted step, including inputs and result/error text."""
         with get_db_cursor() as (_, cursor):
             cursor.execute(
                 """
@@ -114,6 +121,7 @@ class WorkflowRunRepository:
 
     @staticmethod
     def finalize_run(run_id: int, status: str, error_summary: str | None = None) -> None:
+        """Write the terminal status and completion timestamp for a run."""
         with get_db_cursor() as (_, cursor):
             cursor.execute(
                 """
@@ -126,6 +134,7 @@ class WorkflowRunRepository:
 
     @staticmethod
     def cancel_queued_run(run_id: int, error_summary: str = "cancelled_by_user") -> bool:
+        """Cancel only queued work; running work is handled by run control."""
         with get_db_cursor() as (_, cursor):
             cursor.execute(
                 """
@@ -139,6 +148,7 @@ class WorkflowRunRepository:
 
     @staticmethod
     def get_run(run_id: int) -> dict | None:
+        """Fetch one run and decode its stored input/definition snapshots."""
         with get_db_cursor() as (_, cursor):
             cursor.execute(
                 """
@@ -162,6 +172,7 @@ class WorkflowRunRepository:
 
     @staticmethod
     def list_step_runs(run_id: int) -> list[dict]:
+        """Return step attempts in execution order for history and diagnostics."""
         with get_db_cursor() as (_, cursor):
             cursor.execute(
                 """
@@ -188,6 +199,7 @@ class WorkflowRunRepository:
         size_bytes: int,
         step_run_id: int | None = None,
     ) -> int:
+        """Persist metadata for a file already created by the runner."""
         with get_db_cursor() as (_, cursor):
             cursor.execute(
                 """
@@ -211,6 +223,7 @@ class WorkflowRunRepository:
 
     @staticmethod
     def list_artifacts_for_run(run_id: int) -> list[dict]:
+        """List artifact metadata in stable creation order."""
         with get_db_cursor() as (_, cursor):
             cursor.execute(
                 """
@@ -226,6 +239,7 @@ class WorkflowRunRepository:
 
     @staticmethod
     def get_artifact(run_id: int, artifact_id: int) -> dict | None:
+        """Fetch an artifact only when it belongs to the requested run."""
         with get_db_cursor() as (_, cursor):
             cursor.execute(
                 """
@@ -240,6 +254,7 @@ class WorkflowRunRepository:
 
     @staticmethod
     def list_artifacts_created_before(cutoff: datetime, limit: int = 500) -> list[dict]:
+        """Select a bounded cleanup batch of expired artifact metadata."""
         with get_db_cursor() as (_, cursor):
             cursor.execute(
                 """
@@ -256,6 +271,7 @@ class WorkflowRunRepository:
 
     @staticmethod
     def delete_artifacts(artifact_ids: list[int]) -> int:
+        """Delete a selected artifact batch after files have been handled."""
         if not artifact_ids:
             return 0
         placeholders = ", ".join(["%s"] * len(artifact_ids))

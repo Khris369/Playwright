@@ -11,6 +11,8 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 from app.engine.registry import STEP_REGISTRY
 from app.engine.template import TEMPLATE_RE
 
+# Validates editor graph definitions and compiles reachable nodes for the
+# runner, including shape, registry arguments, state dependencies, and cycles.
 MAX_DEFINITION_BYTES = 2 * 1024 * 1024
 MAX_NODES = 500
 MAX_COORDINATE = 1_000_000.0
@@ -79,6 +81,7 @@ class Definition(GraphModel):
 
 @dataclass(frozen=True)
 class GraphIssue:
+    """A stable, UI-friendly validation problem tied to a node or edge."""
     code: str
     message: str
     node_id: str | None = None
@@ -94,12 +97,14 @@ class GraphIssue:
 
 
 class GraphValidationError(ValueError):
+    """Aggregates definition issues so the editor can show them together."""
     def __init__(self, issues: list[GraphIssue]):
         super().__init__("invalid_workflow_definition")
         self.issues = issues
 
 
 def _shape_issue(exc: ValidationError) -> GraphIssue:
+    """Convert Pydantic's first shape error into the public issue format."""
     first = exc.errors(include_url=False, include_context=False)[0]
     location = ".".join(str(part) for part in first.get("loc", ()))
     return GraphIssue("invalid_shape", f"Invalid definition at {location}: {first['msg']}")
@@ -119,6 +124,11 @@ def _template_validation_probe(value: Any, default: Any) -> Any:
 
 
 def compile_definition(raw: dict[str, Any]) -> list[dict[str, Any]]:
+    """Validate a graph and linearize reachable executable nodes.
+
+    Runtime templates are probed with registry defaults for type validation;
+    original template values are preserved in the compiled output.
+    """
     try:
         encoded = json.dumps(raw, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
     except (TypeError, ValueError) as exc:
@@ -184,6 +194,7 @@ def compile_definition(raw: dict[str, Any]) -> list[dict[str, Any]]:
     visiting: set[str] = set()
 
     def visit(current: str) -> None:
+        """Depth-first compile reachable nodes while detecting invalid cycles."""
         if current in visiting:
             if by_id[current].kind != "loop":
                 issues.append(GraphIssue("cycle", "Cycles must return to a Loop node", node_id=current))
@@ -240,6 +251,7 @@ def compile_definition(raw: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def validate_definition(raw: dict[str, Any]) -> dict[str, Any]:
+    """Return a non-raising validation result suitable for API responses."""
     try:
         steps = compile_definition(raw)
         return {"valid": True, "compiled_steps": steps, "compiled_order": [step["id"] for step in steps], "errors": []}

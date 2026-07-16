@@ -11,8 +11,11 @@ from app.services.workflow_run_control import RunCancelledError, WorkflowRunCont
 from app.services.workflow_version_repository import WorkflowVersionRepository
 from app.services.workflow_run_repository import WorkflowRunRepository
 
+# Creates and executes persisted workflow runs, including status transitions,
+# cancellation checks, step history, and best-effort diagnostic artifacts.
 
 def _parse_bool(value: Any, default: bool) -> bool:
+    """Convert common input/config representations to a boolean safely."""
     if value is None:
         return default
     if isinstance(value, bool):
@@ -29,6 +32,7 @@ def _parse_bool(value: Any, default: bool) -> bool:
 
 
 def _condition_matches(args: dict[str, Any], state: dict[str, Any], inputs: dict[str, Any]) -> bool:
+    """Evaluate an if/loop condition against runtime state or user inputs."""
     key = str(args.get("state_key", ""))
     actual = inputs.get(key.removeprefix("inputs.")) if key.startswith("inputs.") else state.get(key)
     expected = args.get("value")
@@ -51,6 +55,7 @@ def _record_artifact_safely(
     step_run_id: int | None = None,
     mime_type: str | None = None,
 ) -> None:
+    """Persist an artifact when possible without masking the run outcome."""
     try:
         record_artifact(
             run_id=run_id,
@@ -64,6 +69,7 @@ def _record_artifact_safely(
 
 
 def _safe_artifact_name(value: str) -> str:
+    """Make a step type suitable for use in a local artifact filename."""
     cleaned = "".join(char if char.isalnum() or char in {"-", "_"} else "_" for char in value)
     return cleaned[:80] or "step"
 
@@ -71,6 +77,7 @@ def _safe_artifact_name(value: str) -> str:
 class WorkflowRunnerService:
     @staticmethod
     def run_workflow_version(version_id: int, inputs: dict[str, Any] | None = None) -> int:
+        """Validate a version, snapshot its compiled steps, and queue a run."""
         version = WorkflowVersionRepository.get(version_id)
         if version is None:
             raise ValueError("workflow_version_not_found")
@@ -90,6 +97,12 @@ class WorkflowRunnerService:
 
     @staticmethod
     def execute_run(run_id: int) -> None:
+        """Execute a run and persist its status, step history, and failures.
+
+        Cancellation is cooperative during the step loop; the registered
+        callback also closes the browser so blocked Playwright calls can stop.
+        Traces and screenshots are best-effort diagnostics, not run outcomes.
+        """
         run = WorkflowRunRepository.get_run(run_id)
         if run is None:
             raise ValueError("workflow_run_not_found")
@@ -153,6 +166,8 @@ class WorkflowRunnerService:
                 page = context_pw.new_page()
                 state["page"] = page
 
+                # Compiled steps contain explicit targets, so ID lookup avoids
+                # repeatedly scanning the workflow definition.
                 by_id = {str(step.get("id")): step for step in steps}
                 current_id = str(steps[0].get("id")) if steps else None
                 loop_counts: dict[str, int] = {}
@@ -171,6 +186,8 @@ class WorkflowRunnerService:
                     args = resolve_value(raw_args, context)
 
                     try:
+                        # Control nodes select a target; registered step types
+                        # perform the corresponding browser/state operation.
                         if step_type in {"__if__", "__loop__"}:
                             matched = _condition_matches(args, state, inputs)
                             if step_type == "__if__":
@@ -302,6 +319,7 @@ class WorkflowRunnerService:
 
 
 def _close_run_browser(context_pw: Any, browser: Any) -> None:
+    """Close Playwright resources defensively during cancellation or cleanup."""
     try:
         context_pw.close()
     except Exception:
