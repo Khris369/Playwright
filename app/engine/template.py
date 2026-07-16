@@ -5,8 +5,11 @@ from typing import Any
 
 TEMPLATE_RE = re.compile(r"^\{\{\s*([a-zA-Z0-9_.]+)\s*\}\}$")
 
+# Templates are deliberately limited to exact dotted paths. They can read
+# runtime context values but cannot evaluate expressions or invoke code.
 
 def _resolve_path(path: str, context: dict[str, Any]) -> Any:
+    """Resolve a dotted path through dictionary-only runtime context."""
     parts = path.split(".")
     current: Any = context
     for part in parts:
@@ -17,6 +20,7 @@ def _resolve_path(path: str, context: dict[str, Any]) -> Any:
 
 
 def resolve_value(value: Any, context: dict[str, Any]) -> Any:
+    """Recursively replace exact templates while preserving other values/types."""
     if isinstance(value, str):
         match = TEMPLATE_RE.match(value)
         if match:

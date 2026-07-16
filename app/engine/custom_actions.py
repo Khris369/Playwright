@@ -4,8 +4,11 @@ import json
 from pathlib import Path
 from typing import Any
 
+# Legacy custom-action entry point. Custom actions are intentionally disabled;
+# executable workflows must use typed, allowlisted registry step definitions.
 
 def execute_custom_action(action: str, args: dict[str, Any], state: dict[str, Any]) -> str:
+    """Reject the legacy extension point instead of executing arbitrary actions."""
     raise RuntimeError("Custom actions are not supported; use a registered step type")
 
 

@@ -10,14 +10,18 @@ from app.services.db import get_db_cursor
 SESSION_COOKIE_NAME = "workflow_session"
 SESSION_TTL_DAYS = 7
 
+# Only a SHA-256 digest is stored in the database; the raw random token is
+# returned once to the caller and is used as the browser session cookie.
 
 def hash_session_token(token: str) -> str:
+    """Hash a session token for lookup without persisting the bearer secret."""
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
 class SessionRepository:
     @staticmethod
     def create(user_id: int) -> tuple[str, datetime]:
+        """Create a seven-day cryptographically random session for a user."""
         token = secrets.token_urlsafe(32)
         token_hash = hash_session_token(token)
         expires_at = datetime.now(timezone.utc) + timedelta(days=SESSION_TTL_DAYS)
@@ -33,6 +37,11 @@ class SessionRepository:
 
     @staticmethod
     def get_user_for_token(token: str) -> dict | None:
+        """Resolve an active token and update its last-seen timestamp.
+
+        Revoked, expired, or inactive-user sessions are rejected by the same
+        query, keeping authentication state checks at the persistence boundary.
+        """
         token_hash = hash_session_token(token)
         with get_db_cursor() as (_, cursor):
             cursor.execute(
@@ -58,6 +67,7 @@ class SessionRepository:
 
     @staticmethod
     def revoke(token: str) -> None:
+        """Revoke a token without deleting its audit record."""
         token_hash = hash_session_token(token)
         with get_db_cursor() as (_, cursor):
             cursor.execute(

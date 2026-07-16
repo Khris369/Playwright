@@ -6,6 +6,9 @@ from urllib import error, request
 
 from config import env
 
+# Builds tightly constrained prompts and calls the configured chat-completions
+# endpoint for workflow advice. AI output is parsed and allowlisted here before
+# it can be returned to the editor or run-diagnostics API.
 
 class TroubleshootAIService:
     @staticmethod
@@ -17,6 +20,12 @@ class TroubleshootAIService:
         current_definition_json: dict[str, Any] | None = None,
         available_step_types: list[str] | None = None,
     ) -> str:
+        """Build an editor-assistant prompt with untrusted context boundaries.
+
+        Workflow JSON and HTML are included as data for analysis, not as
+        instructions. The requested action shape is intentionally limited to
+        proposing registered steps for user review.
+        """
         context = {
             "workflow_id": workflow_id,
             "workflow_version_id": workflow_version_id,
@@ -48,6 +57,7 @@ class TroubleshootAIService:
 
     @staticmethod
     def parse_editor_assistant_response(content: str) -> tuple[str, list[dict[str, Any]]]:
+        """Parse assistant JSON and retain only bounded add-step actions."""
         text = content.strip()
         if text.startswith("```"):
             text = text.strip("`")
@@ -71,6 +81,7 @@ class TroubleshootAIService:
     def build_prompt(
         run: dict[str, Any], step_runs: list[dict[str, Any]], extra_prompt: str | None = None
     ) -> str:
+        """Build a troubleshooting prompt containing run and failed-step data only."""
         failed_steps = [
             {
                 "step_index": row.get("step_index"),
@@ -116,6 +127,11 @@ class TroubleshootAIService:
     def call_chat_model(
         prompt: str, model: str | None = None, temperature: float = 0.2
     ) -> tuple[str, str]:
+        """Call the configured OpenAI-compatible endpoint without exposing the API key.
+
+        Network, HTTP, malformed-response, and missing-credential failures are
+        converted to runtime errors for the API layer to translate.
+        """
         api_key = env("OPENAI_API_KEY")
         if not api_key:
             raise RuntimeError("OPENAI_API_KEY is not set")
@@ -162,6 +178,7 @@ class TroubleshootAIService:
 
     @staticmethod
     def parse_structured_analysis(content: str) -> dict[str, Any]:
+        """Extract JSON analysis and return the documented response fields."""
         text = content.strip()
         if text.startswith("```"):
             text = text.strip("`")

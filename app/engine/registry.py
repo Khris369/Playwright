@@ -7,9 +7,13 @@ from pydantic import BaseModel
 from app.engine import executor
 from app.engine.contracts import *
 
+# The registry is the allowlist shared by the editor, graph validator, and
+# executor. Adding a step requires its typed arguments, editor metadata, and
+# runtime handler to be declared together here.
 
 @dataclass(frozen=True)
 class StepDefinition:
+    """Complete contract for one editor-visible and executable step type."""
     key: str
     title: str
     category: str
@@ -23,6 +27,7 @@ class StepDefinition:
 
 
 def _editor(*names: str) -> dict[str, Any]:
+    """Build compact editor widget metadata from argument field names."""
     return {"fields": [{
         "path": n,
         "widget": (
@@ -56,6 +61,7 @@ STEP_REGISTRY = {item.key: item for item in _items}
 
 
 def public_step_types() -> list[dict[str, Any]]:
+    """Expose registry metadata for constructing the workflow editor palette."""
     return [{
         "key": item.key, "name": item.title, "category": item.category,
         "description": item.description, "default_args": item.default_args,
