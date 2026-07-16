@@ -10,7 +10,7 @@ USE `workflow_builder`;
 CREATE TABLE IF NOT EXISTS `users` (
   `id` INT NOT NULL AUTO_INCREMENT,
   `username` VARCHAR(255) NOT NULL,
-  `email` VARCHAR(254) NOT NULL,
+  `email` VARCHAR(254),
   `display_name` VARCHAR(120) NOT NULL,
   `password_hash` VARCHAR(255) NULL,
   `role` VARCHAR(30) NOT NULL DEFAULT 'user',
