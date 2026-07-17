@@ -11,6 +11,8 @@ from app.services.workflow_run_control import RunCancelledError, WorkflowRunCont
 from app.services.workflow_version_repository import WorkflowVersionRepository
 from app.services.workflow_run_repository import WorkflowRunRepository
 
+SCREENSHOT_DELAY_MS = 1500
+
 # Creates and executes persisted workflow runs, including status transitions,
 # cancellation checks, step history, and best-effort diagnostic artifacts.
 
@@ -72,6 +74,11 @@ def _safe_artifact_name(value: str) -> str:
     """Make a step type suitable for use in a local artifact filename."""
     cleaned = "".join(char if char.isalnum() or char in {"-", "_"} else "_" for char in value)
     return cleaned[:80] or "step"
+
+
+def _wait_before_screenshot(page: Any) -> None:
+    """Allow transient loading states and animations to settle before capture."""
+    page.wait_for_timeout(SCREENSHOT_DELAY_MS)
 
 
 class WorkflowRunnerService:
@@ -218,6 +225,7 @@ class WorkflowRunnerService:
                                 screenshot_path = step_dir / (
                                     f"{execution_index:03d}-{_safe_artifact_name(step_type)}.png"
                                 )
+                                _wait_before_screenshot(page)
                                 page.screenshot(path=str(screenshot_path), full_page=True)
                                 _record_artifact_safely(
                                     run_id,
@@ -240,6 +248,7 @@ class WorkflowRunnerService:
                         )
                         if artifacts_enabled and failure_screenshot_path is not None:
                             try:
+                                _wait_before_screenshot(page)
                                 page.screenshot(
                                     path=str(failure_screenshot_path), full_page=True
                                 )
@@ -275,6 +284,7 @@ class WorkflowRunnerService:
 
                 if final_screenshot_enabled and final_screenshot_path is not None:
                     try:
+                        _wait_before_screenshot(page)
                         page.screenshot(path=str(final_screenshot_path), full_page=True)
                         _record_artifact_safely(
                             run_id,

@@ -17,6 +17,11 @@ import { AssistantPanel } from './AssistantPanel'
 type Snapshot = { nodes: GraphNode[]; edges: GraphEdge[] }
 const nodeTypes = { workflow: WorkflowNode }
 
+function isTextEditingTarget(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) return false
+  return target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)
+}
+
 export default function App() {
   const workflowId = Number(new URLSearchParams(location.search).get('workflow_id'))
   const initial = useMemo(blankGraph, [])
@@ -230,6 +235,7 @@ export default function App() {
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
       if (!(event.ctrlKey || event.metaKey)) return
+      if (isTextEditingTarget(event.target)) return
       if (event.key === 'z') { event.preventDefault(); event.shiftKey ? redo() : undo() }
       if (event.key === 'y') { event.preventDefault(); redo() }
       if (event.key === 'c' && selected) copied.current = structuredClone(selected)

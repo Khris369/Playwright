@@ -9,7 +9,7 @@ export type StepType = {
   description: string
   default_args: Record<string, unknown>
   args_schema: Record<string, unknown>
-  editor_schema: { fields?: Array<{ path: string; widget: string }> }
+  editor_schema: { fields?: Array<{ path: string; widget: string; options?: Array<{ value: string; label: string }> }> }
 }
 
 export type GraphNodeData = {

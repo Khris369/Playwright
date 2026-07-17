@@ -71,7 +71,7 @@ const stepTemplates = {
   fill_input: { target: { strategy: "label", label: "Field" }, value: "" },
   click: { target: { strategy: "role", role: "button", name: "Submit" } },
   select_option: { target: { strategy: "label", label: "Field" }, option: { by: "label", value: "Option" } },
-  wait_for_element: { target: { strategy: "text", text: "Ready" } },
+  wait_for_element: { target: { strategy: "text", text: "Ready" }, state: "visible" },
   wait_timeout: { timeout_ms: 1000 },
   assert_url_not_equal: { url: "" },
   assert_text_visible: { text: "" },

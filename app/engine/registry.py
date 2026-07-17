@@ -28,15 +28,25 @@ class StepDefinition:
 
 def _editor(*names: str) -> dict[str, Any]:
     """Build compact editor widget metadata from argument field names."""
-    return {"fields": [{
-        "path": n,
-        "widget": (
-            "ticket-fields" if n == "fields"
-            else "locator" if n in {"target", "submit_target", "confirm_target"}
-            else "select-option" if n == "option"
+    fields = []
+    for name in names:
+        widget = (
+            "ticket-fields" if name == "fields"
+            else "locator" if name in {"target", "submit_target", "confirm_target"}
+            else "select-option" if name == "option"
+            else "select" if name == "state"
             else "text"
-        ),
-    } for n in names]}
+        )
+        field: dict[str, Any] = {"path": name, "widget": widget}
+        if name == "state":
+            field["options"] = [
+                {"value": "attached", "label": "Attached to DOM"},
+                {"value": "visible", "label": "Visible"},
+                {"value": "hidden", "label": "Hidden"},
+                {"value": "detached", "label": "Detached from DOM"},
+            ]
+        fields.append(field)
+    return {"fields": fields}
 
 
 ROLE_BUTTON = {"target": {"strategy": "role", "role": "button", "name": "Button", "exact": True}}
@@ -48,7 +58,7 @@ _items = (
     StepDefinition("click", "Click", "Interaction", "Click a typed locator.", ClickArgs, ROLE_BUTTON, _editor("target"), executor.click),
     StepDefinition("fill_input", "Fill input", "Interaction", "Fill a text control.", TargetValueArgs, {"target": LABEL_TARGET, "value": ""}, _editor("target", "value"), executor.fill_input),
     StepDefinition("select_option", "Select option", "Interaction", "Select explicitly by label, value, or index.", SelectOptionArgs, {"target": LABEL_TARGET, "option": {"by": "label", "value": "Option"}}, _editor("target", "option"), executor.select_option),
-    StepDefinition("wait_for_element", "Wait for element", "Wait", "Wait for a visible target.", WaitForElementArgs, {"target": LABEL_TARGET, "timeout_ms": 30000}, _editor("target", "timeout_ms"), executor.wait_for_element),
+    StepDefinition("wait_for_element", "Wait for element", "Wait", "Wait for a target to reach a selected state.", WaitForElementArgs, {"target": LABEL_TARGET, "state": "visible", "timeout_ms": 30000}, _editor("target", "state", "timeout_ms"), executor.wait_for_element),
     StepDefinition("wait_timeout", "Wait timeout", "Wait", "Wait a bounded duration.", WaitTimeoutArgs, {"timeout_ms": 1000}, _editor("timeout_ms"), executor.wait_timeout),
     StepDefinition("assert_url_not_equal", "Assert URL changed", "Assertion", "Require the current URL to differ.", AssertUrlNotEqualArgs, {"url": "https://example.com/login"}, _editor("url"), executor.assert_url_not_equal),
     StepDefinition("assert_text_visible", "Assert text visible", "Assertion", "Require unique visible text.", AssertTextVisibleArgs, {"text": "Success", "exact": True}, _editor("text", "exact"), executor.assert_text_visible),

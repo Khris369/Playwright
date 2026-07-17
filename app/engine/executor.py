@@ -59,18 +59,18 @@ def select_option(args: SelectOptionArgs, state: dict[str, Any]) -> StepResult:
 
 
 def wait_for_element(args: WaitForElementArgs, state: dict[str, Any]) -> StepResult:
-    """Wait for visibility and enforce uniqueness for strict locators."""
+    """Wait for the requested locator state and enforce uniqueness for strict locators."""
     if (page := _page(state)) is not None:
         locator = resolve_locator(page, args.target, require_unique=False)
         try:
-            locator.wait_for(state="visible", timeout=args.timeout_ms)
+            locator.wait_for(state=args.state, timeout=args.timeout_ms)
         except Exception as exc:
             raise StepExecutionError(str(exc)) from exc
         if args.target.match == "strict":
             count = locator.count()
             if count != 1:
                 raise LocatorResolutionError(f"strict locator matched {count} elements; expected exactly one")
-    return StepResult(f"Waited for target ({args.timeout_ms}ms)")
+    return StepResult(f"Waited for target to become {args.state} ({args.timeout_ms}ms)")
 
 
 def wait_timeout(args: WaitTimeoutArgs, state: dict[str, Any]) -> StepResult:

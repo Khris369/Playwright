@@ -95,6 +95,7 @@ class SelectOptionArgs(StrictModel):
 
 class WaitForElementArgs(StrictModel):
     target: Locator
+    state: Literal["attached", "detached", "visible", "hidden"] = "visible"
     timeout_ms: int = Field(default=30_000, ge=1, le=120_000)
 
 
