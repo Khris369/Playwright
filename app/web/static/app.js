@@ -759,6 +759,10 @@ function buildRunInputsPayload() {
   } else if (browserMode === "headed") {
     inputs.headed = true;
   }
+  const captureStepScreenshots = $("run-capture-step-screenshots");
+  if (captureStepScreenshots) {
+    inputs.capture_step_screenshots = captureStepScreenshots.checked;
+  }
   return inputs;
 }
 
@@ -797,7 +801,7 @@ async function saveRunArgPreset(isNew = false) {
   if (!name) {
     throw new Error("Preset name is required");
   }
-  const inputs = JSON.parse(($("run-inputs") || {}).value || "{}");
+  const inputs = buildRunInputsPayload();
   const workflowId = Number(($("run-workflow-id") || {}).value) || null;
   const versionId = Number(($("run-version-id") || {}).value) || null;
   const selectedPresetId = Number(($("run-preset-id") || {}).value) || null;
@@ -832,6 +836,10 @@ async function loadRunArgPreset() {
   $("run-inputs").value = JSON.stringify(preset.inputs_json || {}, null, 2);
   autoResizeTextarea($("run-inputs"), { minRows: 6, maxRows: 24 });
   updateRunJsonStatus();
+  const captureStepScreenshots = $("run-capture-step-screenshots");
+  if (captureStepScreenshots) {
+    captureStepScreenshots.checked = Boolean(preset.inputs_json?.capture_step_screenshots);
+  }
   setValueIfPresent("run-preset-name", preset.name || "");
 }
 

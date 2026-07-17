@@ -20,6 +20,30 @@ def hash_session_token(token: str) -> str:
 
 class SessionRepository:
     @staticmethod
+    def revoke_all_for_user(user_id: int) -> None:
+        """Revoke all active sessions after a password change."""
+        with get_db_cursor() as (_, cursor):
+            cursor.execute(
+                """
+                UPDATE user_sessions
+                SET revoked_at = NOW()
+                WHERE user_id = %s AND revoked_at IS NULL
+                """,
+                (user_id,),
+            )
+
+    @staticmethod
+    def cleanup_expired() -> None:
+        """Remove expired and revoked sessions."""
+        with get_db_cursor() as (_, cursor):
+            cursor.execute(
+                """
+                DELETE FROM user_sessions
+                WHERE expires_at <= NOW() OR revoked_at IS NOT NULL
+                """
+            )
+
+    @staticmethod
     def create(user_id: int) -> tuple[str, datetime]:
         """Create a seven-day cryptographically random session for a user."""
         token = secrets.token_urlsafe(32)

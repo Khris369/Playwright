@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.schemas.template import (
     WorkflowTemplateCreate,
@@ -9,6 +9,7 @@ from app.schemas.template import (
     WorkflowTemplateResponse,
 )
 from app.services.template_repository import TemplateRepository
+from app.core.auth import current_user
 
 router = APIRouter(prefix="/workflow-templates", tags=["workflow-templates"])
 
@@ -18,7 +19,7 @@ router = APIRouter(prefix="/workflow-templates", tags=["workflow-templates"])
     response_model=list[WorkflowTemplateResponse],
     status_code=status.HTTP_200_OK,
 )
-def seed_default_templates() -> list[WorkflowTemplateResponse]:
+def seed_default_templates(user: dict = Depends(current_user)) -> list[WorkflowTemplateResponse]:
     TemplateRepository.ensure_default_template()
     rows = TemplateRepository.list_templates()
     return [WorkflowTemplateResponse(**row) for row in rows]
@@ -27,13 +28,13 @@ def seed_default_templates() -> list[WorkflowTemplateResponse]:
 @router.post(
     "", response_model=WorkflowTemplateResponse, status_code=status.HTTP_201_CREATED
 )
-def create_template(payload: WorkflowTemplateCreate) -> WorkflowTemplateResponse:
+def create_template(payload: WorkflowTemplateCreate, user: dict = Depends(current_user)) -> WorkflowTemplateResponse:
     row = TemplateRepository.create_template(payload)
     return WorkflowTemplateResponse(**row)
 
 
 @router.get("", response_model=list[WorkflowTemplateResponse])
-def list_templates() -> list[WorkflowTemplateResponse]:
+def list_templates(user: dict = Depends(current_user)) -> list[WorkflowTemplateResponse]:
     rows = TemplateRepository.list_templates()
     return [WorkflowTemplateResponse(**row) for row in rows]
 
@@ -44,7 +45,7 @@ def list_templates() -> list[WorkflowTemplateResponse]:
     status_code=status.HTTP_201_CREATED,
 )
 def import_template(
-    template_id: int, payload: WorkflowTemplateImportRequest
+    template_id: int, payload: WorkflowTemplateImportRequest, user: dict = Depends(current_user)
 ) -> WorkflowTemplateImportResponse:
     try:
         result = TemplateRepository.import_template_to_workflow(

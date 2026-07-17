@@ -1,19 +1,22 @@
 from __future__ import annotations
 
 import json
+import logging
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import ValidationError
 
 from app.schemas.editor_assistant import EditorAssistantRequest, EditorAssistantResponse
 from app.services.troubleshoot_ai_service import TroubleshootAIService
 from app.engine.registry import STEP_REGISTRY
+from app.core.auth import current_user
 
 router = APIRouter(prefix="/editor-assistant", tags=["editor-assistant"])
+logger = logging.getLogger(__name__)
 
 
 @router.post("", response_model=EditorAssistantResponse)
-def ask_editor_assistant(payload: EditorAssistantRequest) -> EditorAssistantResponse:
+def ask_editor_assistant(payload: EditorAssistantRequest, user: dict = Depends(current_user)) -> EditorAssistantResponse:
     if payload.current_definition_json is not None and len(json.dumps(payload.current_definition_json, separators=(",", ":")).encode("utf-8")) > 512 * 1024:
         raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Workflow context is too large")
     prompt = TroubleshootAIService.build_editor_assistant_prompt(
@@ -42,6 +45,7 @@ def ask_editor_assistant(payload: EditorAssistantRequest) -> EditorAssistantResp
                 continue
             actions.append({"action": "add_step", "step_type": action["step_type"], "args": validated.model_dump(mode="json")})
     except RuntimeError as exc:
+        logger.exception("Editor assistant provider or validation failure: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="Editor assistant could not produce a safe response",

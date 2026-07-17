@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 
 from app.core.auth import current_user
+from app.core.settings import get_settings
 from app.schemas.user import LoginRequest, UserCreate, UserPasswordChange, UserResponse
 from app.services.passwords import verify_password
 from app.services.session_repository import SESSION_COOKIE_NAME, SessionRepository
@@ -18,7 +19,7 @@ def _set_session_cookie(response: Response, token: str, expires_at) -> None:
         expires=expires_at,
         httponly=True,
         samesite="strict",
-        secure=False,
+        secure=get_settings().environment.lower() in {"production", "prod"},
         path="/",
     )
 
@@ -63,6 +64,7 @@ def change_password(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Current password is incorrect",
         )
+    SessionRepository.revoke_all_for_user(int(user["id"]))
 
 
 @router.post("/bootstrap-admin", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
