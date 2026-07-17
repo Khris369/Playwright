@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from app.core.auth import current_user
+from app.core.auth import require_permission, require_workflow_access, require_workflow_owner
+from app.schemas.workflow_member import WorkflowMemberResponse, WorkflowMembersUpdate
+from app.services.permission_repository import PermissionRepository
 from app.schemas.workflow import (
     WorkflowCreate,
     WorkflowResponse,
@@ -18,23 +20,55 @@ from app.services.workflow_version_repository import WorkflowVersionRepository, 
 router = APIRouter(prefix="/workflows", tags=["workflows"])
 
 
+@router.get("/{workflow_id}/members", response_model=list[WorkflowMemberResponse])
+def list_workflow_members(
+    workflow_id: int, user: dict = Depends(require_workflow_owner())
+) -> list[WorkflowMemberResponse]:
+    return [WorkflowMemberResponse(**row) for row in PermissionRepository.list_workflow_members(workflow_id)]
+
+
+@router.put("/{workflow_id}/members", response_model=list[WorkflowMemberResponse])
+def update_workflow_members(
+    workflow_id: int,
+    payload: WorkflowMembersUpdate,
+    user: dict = Depends(require_workflow_owner()),
+) -> list[WorkflowMemberResponse]:
+    try:
+        rows = PermissionRepository.set_workflow_members(
+            workflow_id, [member.model_dump() for member in payload.members]
+        )
+    except ValueError as exc:
+        errors = {
+            "workflow_not_found": (404, "Workflow not found"),
+            "user_not_found": (422, "One or more users were not found or are inactive"),
+            "invalid_access_level": (422, "Access level must be viewer, editor, or runner"),
+        }
+        status_code, detail = errors.get(str(exc), (422, "Invalid workflow members"))
+        raise HTTPException(status_code=status_code, detail=detail) from exc
+    return [WorkflowMemberResponse(**row) for row in rows]
+
+
 @router.post("", response_model=WorkflowResponse, status_code=status.HTTP_201_CREATED)
 def create_workflow(
     payload: WorkflowCreate,
-    user: dict = Depends(current_user),
+    user: dict = Depends(require_permission("workflow.edit")),
 ) -> WorkflowResponse:
     row = WorkflowRepository.create_workflow(payload, int(user["id"]) if user else None)
     return WorkflowResponse(**row)
 
 
 @router.get("", response_model=list[WorkflowResponse])
-def list_workflows(active_only: bool = Query(default=False), user: dict = Depends(current_user)) -> list[WorkflowResponse]:
-    rows = WorkflowRepository.list_workflows(active_only=active_only)
+def list_workflows(active_only: bool = Query(default=False), user: dict = Depends(require_permission("workflow.view"))) -> list[WorkflowResponse]:
+    rows = WorkflowRepository.list_workflows(
+        active_only=active_only,
+        user_id=int(user["id"]),
+        is_admin="admin" in user.get("roles", []),
+    )
     return [WorkflowResponse(**row) for row in rows]
 
 
 @router.get("/{workflow_id}", response_model=WorkflowResponse)
-def get_workflow(workflow_id: int, user: dict = Depends(current_user)) -> WorkflowResponse:
+def get_workflow(workflow_id: int, user: dict = Depends(require_workflow_access("workflow.view"))) -> WorkflowResponse:
     row = WorkflowRepository.get_workflow(workflow_id)
     if row is None:
         raise HTTPException(
@@ -51,7 +85,7 @@ def get_workflow(workflow_id: int, user: dict = Depends(current_user)) -> Workfl
 def create_workflow_version(
     workflow_id: int,
     payload: WorkflowVersionCreate,
-    user: dict = Depends(current_user),
+    user: dict = Depends(require_workflow_access("workflow.edit")),
 ) -> WorkflowVersionResponse:
     try:
         row = WorkflowVersionRepository.create(workflow_id, payload, int(user["id"]) if user else None)
@@ -69,13 +103,13 @@ def create_workflow_version(
 
 
 @router.get("/{workflow_id}/versions", response_model=list[WorkflowVersionResponse])
-def list_workflow_versions(workflow_id: int, user: dict = Depends(current_user)) -> list[WorkflowVersionResponse]:
+def list_workflow_versions(workflow_id: int, user: dict = Depends(require_workflow_access("workflow.view"))) -> list[WorkflowVersionResponse]:
     rows = WorkflowVersionRepository.list(workflow_id)
     return [WorkflowVersionResponse(**row) for row in rows]
 
 
 @router.get("/versions/{version_id}", response_model=WorkflowVersionResponse)
-def get_workflow_version(version_id: int, user: dict = Depends(current_user)) -> WorkflowVersionResponse:
+def get_workflow_version(version_id: int, user: dict = Depends(require_workflow_access("workflow.view"))) -> WorkflowVersionResponse:
     row = WorkflowVersionRepository.get(version_id)
     if row is None:
         raise HTTPException(
@@ -88,7 +122,7 @@ def get_workflow_version(version_id: int, user: dict = Depends(current_user)) ->
 def update_workflow_version(
     version_id: int,
     payload: WorkflowVersionUpdate,
-    user: dict = Depends(current_user),
+    user: dict = Depends(require_workflow_access("workflow.edit")),
 ) -> WorkflowVersionResponse:
     try:
         row = WorkflowVersionRepository.update(version_id, payload, int(user["id"]) if user else None)
@@ -129,7 +163,7 @@ def _set_published(
 def publish_workflow_version(
     version_id: int,
     payload: WorkflowVersionLockRequest,
-    user: dict = Depends(current_user),
+    user: dict = Depends(require_workflow_access("workflow.edit")),
 ) -> WorkflowVersionResponse:
     return _set_published(version_id, payload, True, user)
 
@@ -138,13 +172,13 @@ def publish_workflow_version(
 def unpublish_workflow_version(
     version_id: int,
     payload: WorkflowVersionLockRequest,
-    user: dict = Depends(current_user),
+    user: dict = Depends(require_workflow_access("workflow.edit")),
 ) -> WorkflowVersionResponse:
     return _set_published(version_id, payload, False, user)
 
 
 @router.delete("/{workflow_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_workflow(workflow_id: int, user: dict = Depends(current_user)) -> None:
+def delete_workflow(workflow_id: int, user: dict = Depends(require_workflow_access("workflow.delete"))) -> None:
     updated = WorkflowRepository.deactivate_workflow(workflow_id)
     if not updated:
         raise HTTPException(

@@ -23,6 +23,29 @@
     </section>
 
     <section class="card premium-card">
+      <div class="section-title-row">
+        <div>
+          <h2>Role Management</h2>
+          <p class="hint">Assign multiple roles. Effective permissions are combined automatically.</p>
+        </div>
+      </div>
+      <form id="role-management-form" class="user-form">
+        <label>User
+          <select id="role-user-select" required></select>
+        </label>
+        <fieldset class="role-options">
+          <legend>Roles</legend>
+          <div id="role-options-list" class="role-options-list"></div>
+        </fieldset>
+        <div>
+          <span class="field-label">Effective permissions</span>
+          <div id="effective-permissions" class="permission-list muted">Select a user.</div>
+        </div>
+        <button class="btn-primary" type="submit">Save role assignments</button>
+      </form>
+    </section>
+
+    <section class="card premium-card">
       <h2>Create User</h2>
       <form id="create-user-form" class="user-form">
         <label>Username
@@ -33,12 +56,6 @@
         </label>
         <label>Display name
           <input id="create-name" required>
-        </label>
-        <label>Role
-          <select id="create-role">
-            <option value="user">user</option>
-            <option value="admin">admin</option>
-          </select>
         </label>
         <label>Status
           <select id="create-status">
@@ -54,6 +71,6 @@
     </section>
   </main>
   <script src="/ui/static/navbar.js"></script>
-  <script src="/ui/static/users.js"></script>
+  <script src="/ui/static/users.js?v=rbac-20260717-3"></script>
 </body>
 </html>

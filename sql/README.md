@@ -19,6 +19,7 @@ For a new database, apply only:
 - step types and current default seeds
 - run argument presets
 - account ownership columns added for future auth
+- roles, permissions, user_roles, role_permissions, and workflow_members
 
 ## Existing Database Updates
 
@@ -28,6 +29,8 @@ For databases that were initialized before the latest consolidated schema, apply
 2. `008_workflow_graph_versioning.sql`
 3. `009_accounts.sql`
 4. `010_workflow_last_updated.sql`
+5. `011_rbac.sql`
+6. `012_remove_legacy_user_role.sql`
 
 These files are retained only for existing installations.
 

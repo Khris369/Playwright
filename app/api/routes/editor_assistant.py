@@ -9,14 +9,14 @@ from pydantic import ValidationError
 from app.schemas.editor_assistant import EditorAssistantRequest, EditorAssistantResponse
 from app.services.troubleshoot_ai_service import TroubleshootAIService
 from app.engine.registry import STEP_REGISTRY
-from app.core.auth import current_user
+from app.core.auth import require_permission
 
 router = APIRouter(prefix="/editor-assistant", tags=["editor-assistant"])
 logger = logging.getLogger(__name__)
 
 
 @router.post("", response_model=EditorAssistantResponse)
-def ask_editor_assistant(payload: EditorAssistantRequest, user: dict = Depends(current_user)) -> EditorAssistantResponse:
+def ask_editor_assistant(payload: EditorAssistantRequest, user: dict = Depends(require_permission("workflow.edit"))) -> EditorAssistantResponse:
     if payload.current_definition_json is not None and len(json.dumps(payload.current_definition_json, separators=(",", ":")).encode("utf-8")) > 512 * 1024:
         raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Workflow context is too large")
     prompt = TroubleshootAIService.build_editor_assistant_prompt(

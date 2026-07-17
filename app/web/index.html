@@ -50,6 +50,35 @@
 
     </section>
 
+    <dialog id="workflow-share-dialog" class="workflow-share-dialog">
+      <form method="dialog" id="workflow-share-form">
+        <div class="section-title-row">
+          <div>
+            <h2>Share workflow</h2>
+            <p id="workflow-share-name" class="hint"></p>
+          </div>
+          <button class="btn-secondary btn-sm" value="cancel" type="submit">Close</button>
+        </div>
+        <div class="grid2">
+          <label>User
+            <select id="workflow-share-user"></select>
+          </label>
+          <label>Access
+            <select id="workflow-share-access">
+              <option value="viewer">Viewer</option>
+              <option value="editor">Editor</option>
+              <option value="runner">Runner</option>
+            </select>
+          </label>
+        </div>
+        <button id="workflow-share-add" class="btn-secondary" value="" type="button">Add or update member</button>
+        <div id="workflow-share-members" class="workflow-share-members"></div>
+        <div class="actions-centered">
+          <button id="workflow-share-save" class="btn-primary" value="" type="button">Save sharing</button>
+        </div>
+      </form>
+    </dialog>
+
     <!-- <section class="tab-panel" data-panel="templates">
       <div class="panel-grid two-col">
         <section class="card">

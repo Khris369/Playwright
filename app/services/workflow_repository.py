@@ -48,12 +48,18 @@ class WorkflowRepository:
             return row
 
     @staticmethod
-    def list_workflows(active_only: bool = False) -> list[dict]:
+    def list_workflows(active_only: bool = False, user_id: int | None = None, is_admin: bool = False) -> list[dict]:
         query = _workflow_select_sql()
         params: list[object] = []
+        conditions: list[str] = []
         if active_only:
-            query += " WHERE w.status = %s"
+            conditions.append("w.status = %s")
             params.append("active")
+        if user_id is not None and not is_admin:
+            conditions.append("(w.owner_user_id = %s OR EXISTS (SELECT 1 FROM workflow_members wm WHERE wm.workflow_id = w.id AND wm.user_id = %s))")
+            params.extend([user_id, user_id])
+        if conditions:
+            query += " WHERE " + " AND ".join(conditions)
         query += " ORDER BY w.updated_at DESC, w.created_at DESC"
 
         with get_db_cursor() as (_, cursor):

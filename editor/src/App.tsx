@@ -28,6 +28,7 @@ export default function App() {
   const [nodes, setNodes] = useState(initial.nodes)
   const [edges, setEdges] = useState(initial.edges)
   const [stepTypes, setStepTypes] = useState<StepType[]>([])
+  const [canRun, setCanRun] = useState(false)
   const [versions, setVersions] = useState<Version[]>([])
   const [version, setVersion] = useState<Version>()
   const [selectedId, setSelectedId] = useState<string>()
@@ -47,7 +48,7 @@ export default function App() {
   const reactFlowInstance = useRef<any>(null)
 
   const readOnly = Boolean(version?.is_published)
-  const canOpenRuns = Boolean(workflowId && version)
+  const canOpenRuns = Boolean(workflowId && version && canRun)
   const runsUrl = dashboardRunsUrl(workflowId, version?.id)
   const selected = nodes.find((node) => node.id === selectedId)
   const selectedType = stepTypes.find((step) => step.key === selected?.data.step_type)
@@ -86,6 +87,12 @@ export default function App() {
     nodes: definition.graph.nodes.map(({ position: _position, ...node }) => node),
     edges: definition.graph.edges,
   })
+
+  useEffect(() => {
+    api<{ roles?: string[]; permissions?: string[] }>('/auth/me')
+      .then((user) => setCanRun(Boolean(user.permissions?.includes('workflow.run') || user.roles?.includes('admin'))))
+      .catch(() => setCanRun(false))
+  }, [])
 
   const checkpoint = useCallback(() => {
     setPast((items) => [...items.slice(-99), { nodes, edges }]); setFuture([])
@@ -275,7 +282,7 @@ export default function App() {
   }
 
   return <main className="app-shell">
-    <header><a href="/ui">Dashboard</a><h1>Workflow editor</h1><nav className="editor-tabs" aria-label="Editor sections"><span className="editor-tab is-active" aria-current="page">Editor</span><button className="editor-tab" type="button" disabled={!canOpenRuns} title={canOpenRuns ? 'Open the dashboard Runs tab for the current workflow and version.' : 'Load a workflow and version first.'} onClick={() => { window.location.href = runsUrl }}>Runs</button></nav><button type="button" aria-expanded={assistantOpen} onClick={() => setAssistantOpen((open) => !open)}>Assistant</button><select value={version?.id ?? ''} onChange={(e) => { const next = versions.find((item) => item.id === Number(e.target.value)); if (next && (!dirty || confirm('Discard unsaved changes?'))) loadVersion(next) }}>{versions.map((item) => <option value={item.id} key={item.id}>v{item.version_number}{item.is_published ? ' · published' : ' · draft'}</option>)}</select><button onClick={createVersion}>New version</button><button onClick={togglePublished} disabled={!version || (!version.is_published && !validation.valid)}>{version?.is_published ? 'Unpublish' : 'Publish'}</button><button onClick={save} disabled={readOnly || !dirty || !validation.valid}>Save</button><span>{message}</span></header>
+    <header><a href="/ui">Dashboard</a><h1>Workflow editor</h1><nav className="editor-tabs" aria-label="Editor sections"><span className="editor-tab is-active" aria-current="page">Editor</span><button className="editor-tab" type="button" hidden={!canRun} disabled={!canOpenRuns} title={canOpenRuns ? 'Open the dashboard Runs tab for the current workflow and version.' : 'Load a workflow and version first.'} onClick={() => { window.location.href = runsUrl }}>Runs</button></nav><button type="button" aria-expanded={assistantOpen} onClick={() => setAssistantOpen((open) => !open)}>Assistant</button><select value={version?.id ?? ''} onChange={(e) => { const next = versions.find((item) => item.id === Number(e.target.value)); if (next && (!dirty || confirm('Discard unsaved changes?'))) loadVersion(next) }}>{versions.map((item) => <option value={item.id} key={item.id}>v{item.version_number}{item.is_published ? ' · published' : ' · draft'}</option>)}</select><button onClick={createVersion}>New version</button><button onClick={togglePublished} disabled={!version || (!version.is_published && !validation.valid)}>{version?.is_published ? 'Unpublish' : 'Publish'}</button><button onClick={save} disabled={readOnly || !dirty || !validation.valid}>Save</button><span>{message}</span></header>
     {assistantOpen && <div className="assistant-drawer"><AssistantPanel workflowId={workflowId || undefined} versionId={version?.id} definition={definition} stepTypes={stepTypes} disabled={readOnly} onApply={applyAssistantSteps} onClose={() => setAssistantOpen(false)} /></div>}
     <div className="toolbar"><button disabled={!past.length || readOnly} onClick={undo}>Undo</button><button disabled={!future.length || readOnly} onClick={redo}>Redo</button><button disabled={readOnly} onClick={() => commit(arrange(nodes, edges))}>Arrange</button><button disabled={!selected || readOnly} onClick={duplicate}>Duplicate</button><span className={validation.valid ? 'valid' : 'error'}>{validation.valid ? `${validation.compiled_order.length} steps · valid` : `${validation.errors.length} validation errors`}</span></div>
     <div className="workspace">

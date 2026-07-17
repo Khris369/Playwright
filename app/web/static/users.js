@@ -1,4 +1,6 @@
 const $ = (id) => document.getElementById(id);
+let availableRoles = [];
+let usersById = new Map();
 
 function setAlert(message, isError = false) {
   const alert = $("users-alert");
@@ -29,10 +31,12 @@ async function api(path, options = {}) {
 async function loadCurrentUser() {
   const user = await api("/auth/me");
   if (!user) return null;
-  if (user.role !== "admin") {
-    window.location.href = "/ui";
-    return null;
-  }
+  console.info("[users] authenticated user", {
+    id: user.id,
+    username: user.username,
+    roles: user.roles || [],
+    permissions: user.permissions || [],
+  });
   const actions = $("users-admin-actions");
   if (actions) {
     actions.hidden = false;
@@ -81,13 +85,11 @@ function renderUser(user) {
   const username = textInput(user.username);
   const email = textInput(user.email);
   const displayName = textInput(user.display_name);
-  const role = selectInput(user.role, ["user", "admin"]);
   const status = selectInput(user.status, ["active", "inactive"]);
   form.append(
     field("Username", username),
     field("Email (optional)", email),
     field("Display name", displayName),
-    field("Role", role),
     field("Status", status),
   );
 
@@ -111,7 +113,6 @@ function renderUser(user) {
         username: username.value,
         email: email.value || null,
         display_name: displayName.value,
-        role: role.value,
         status: status.value,
       }),
     });
@@ -133,11 +134,81 @@ function renderUser(user) {
   return card;
 }
 
+function renderRoleOptions(selectedRoles = []) {
+  const list = $("role-options-list");
+  list.replaceChildren();
+  availableRoles.forEach((role) => {
+    const label = document.createElement("label");
+    label.className = "role-option";
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.value = role.name;
+    checkbox.checked = selectedRoles.includes(role.name);
+    checkbox.addEventListener("change", updateEffectivePermissions);
+    label.append(checkbox, document.createTextNode(role.name));
+    list.appendChild(label);
+  });
+}
+
+function selectedRoles() {
+  return [...document.querySelectorAll("#role-options-list input:checked")].map((input) => input.value);
+}
+
+function updateEffectivePermissions() {
+  const permissions = new Set();
+  selectedRoles().forEach((roleName) => {
+    const role = availableRoles.find((item) => item.name === roleName);
+    (role?.permissions || []).forEach((permission) => permissions.add(permission));
+  });
+  const target = $("effective-permissions");
+  target.replaceChildren();
+  if (!permissions.size) {
+    target.textContent = "No permissions selected.";
+    return;
+  }
+  [...permissions].sort().forEach((permission) => {
+    const item = document.createElement("span");
+    item.className = "permission-chip";
+    item.textContent = permission;
+    target.appendChild(item);
+  });
+}
+
+async function loadRoleEditor(userId) {
+  const access = await api(`/users/${userId}/roles`);
+  renderRoleOptions(access.roles || []);
+  const permissions = $("effective-permissions");
+  permissions.replaceChildren();
+  (access.permissions || []).forEach((permission) => {
+    const item = document.createElement("span");
+    item.className = "permission-chip";
+    item.textContent = permission;
+    permissions.appendChild(item);
+  });
+}
+
+async function loadRoleManagement(users) {
+  const roleRows = await api("/users/roles");
+  availableRoles = roleRows || [];
+  const select = $("role-user-select");
+  select.replaceChildren();
+  users.forEach((user) => {
+    const option = document.createElement("option");
+    option.value = user.id;
+    option.textContent = `${user.display_name} (${user.username})`;
+    select.appendChild(option);
+  });
+  if (users.length) {
+    await loadRoleEditor(users[0].id);
+  }
+}
+
 async function loadUsers() {
   const users = await api("/users");
   if (!users) return;
   const list = $("users-list");
   list.replaceChildren();
+  usersById = new Map(users.map((user) => [String(user.id), user]));
   if (!users.length) {
     const empty = document.createElement("div");
     empty.className = "muted";
@@ -147,7 +218,21 @@ async function loadUsers() {
     users.forEach((user) => list.appendChild(renderUser(user)));
   }
   setAlert(`${users.length} user${users.length === 1 ? "" : "s"} loaded.`);
+  await loadRoleManagement(users);
 }
+
+$("role-user-select")?.addEventListener("change", (event) => loadRoleEditor(event.target.value).catch((error) => setAlert(error.message, true)));
+
+$("role-management-form")?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const userId = $("role-user-select").value;
+  await api(`/users/${userId}/roles`, {
+    method: "PUT",
+    body: JSON.stringify({ roles: selectedRoles() }),
+  });
+  setAlert("Role assignments saved.");
+  await loadRoleEditor(userId);
+});
 
 $("create-user-form").addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -157,7 +242,6 @@ $("create-user-form").addEventListener("submit", async (event) => {
       username: $("create-username").value,
       email: $("create-email").value || null,
       display_name: $("create-name").value,
-      role: $("create-role").value,
       status: $("create-status").value,
       password: $("create-password").value,
     }),

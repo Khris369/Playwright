@@ -37,19 +37,25 @@ class WorkflowRunRepository:
         return run_id
 
     @staticmethod
-    def list_runs(workflow_version_id: int | None = None, limit: int = 20) -> list[dict]:
+    def list_runs(workflow_version_id: int | None = None, limit: int = 20, user_id: int | None = None, is_admin: bool = False) -> list[dict]:
         """Return recent runs, optionally limited to one workflow version."""
         with get_db_cursor() as (_, cursor):
             query = """SELECT id, workflow_id, workflow_version_id, status, trigger_source,
                        inputs_json, resolved_definition_json, started_at, finished_at,
                        error_summary, created_at FROM workflow_runs"""
-            params: tuple = ()
+            conditions: list[str] = []
+            params: list[object] = []
             if workflow_version_id is not None:
-                query += " WHERE workflow_version_id = %s"
-                params = (workflow_version_id,)
+                conditions.append("workflow_version_id = %s")
+                params.append(workflow_version_id)
+            if user_id is not None and not is_admin:
+                conditions.append("EXISTS (SELECT 1 FROM workflows w LEFT JOIN workflow_members wm ON wm.workflow_id = w.id AND wm.user_id = %s WHERE w.id = workflow_runs.workflow_id AND (w.owner_user_id = %s OR wm.user_id IS NOT NULL))")
+                params.extend([user_id, user_id])
+            if conditions:
+                query += " WHERE " + " AND ".join(conditions)
             query += " ORDER BY created_at DESC LIMIT %s"
-            params += (limit,)
-            cursor.execute(query, params)
+            params.append(limit)
+            cursor.execute(query, tuple(params))
             rows = list(cursor.fetchall())
             for row in rows:
                 for key in ("inputs_json", "resolved_definition_json"):

@@ -1,4 +1,5 @@
 const $ = (id) => document.getElementById(id);
+let currentUser = null;
 const on = (id, event, handler) => {
   const el = $(id);
   if (el) {
@@ -567,6 +568,9 @@ function renderStepBuilder() {
 }
 
   function setActiveTab(tabName) {
+    if (tabName === "runs" && currentUser && !(currentUser.permissions || []).includes("workflow.run") && !(currentUser.roles || []).includes("admin")) {
+      tabName = "workflows";
+    }
     document.querySelectorAll(".tab").forEach((tab) => {
       const active = tab.getAttribute("data-tab") === tabName;
       tab.classList.toggle("is-active", active);
@@ -945,9 +949,22 @@ async function checkApi() {
 async function loadCurrentUser() {
   try {
     const user = await api("/auth/me");
+    currentUser = user;
+    const editWorkflowButton = $("btn-edit-workflow");
+    if (editWorkflowButton) {
+      editWorkflowButton.hidden = !(user?.permissions || []).includes("workflow.edit") && !(user?.roles || []).includes("admin");
+    }
+    const runsTab = document.querySelector('.tab[data-tab="runs"]');
+    if (runsTab) {
+      const canRun = (user?.permissions || []).includes("workflow.run") || (user?.roles || []).includes("admin");
+      runsTab.hidden = !canRun;
+      if (!canRun && runsTab.classList.contains("is-active")) {
+        setActiveTab("workflows");
+      }
+    }
     const adminActions = $("dashboard-admin-actions");
     if (adminActions) {
-      adminActions.hidden = String(user?.role || "") !== "admin";
+    adminActions.hidden = !(user?.roles || []).includes("admin");
     }
     return user;
   } catch (err) {
@@ -1070,6 +1087,7 @@ function workflowRow(wf) {
       <div class="workflow-cell workflow-cell-created" role="cell">${formatWorkflowDateTime(wf.updated_at || wf.created_at || "")}</div>
       <div class="workflow-cell workflow-cell-actions" role="cell">
         <button type="button" class="btn-link-inline" data-action="edit" data-workflow-id="${wf.id}">Edit</button>
+        <button type="button" class="btn-link-inline" data-action="share" data-workflow-id="${wf.id}">Share</button>
         <button type="button" class="btn-danger-outline" data-action="delete" data-workflow-id="${wf.id}">Delete</button>
       </div>
     </div>
@@ -1189,6 +1207,80 @@ async function deleteWorkflowById(workflowId) {
   await refreshWorkflows();
   toast(`Workflow #${workflowId} set to inactive`);
   return true;
+}
+
+async function shareWorkflowById(workflowId) {
+  const dialog = $("workflow-share-dialog");
+  if (!dialog) return;
+  const workflow = currentWorkflows.find((item) => Number(item.id) === Number(workflowId));
+  const [users, members] = await Promise.all([api("/users/directory"), api(`/workflows/${workflowId}/members`)]);
+  dialog.dataset.workflowId = String(workflowId);
+  $("workflow-share-name").textContent = workflow?.name || `Workflow #${workflowId}`;
+  const select = $("workflow-share-user");
+  select.replaceChildren();
+  (users || []).forEach((user) => {
+    const option = document.createElement("option");
+    option.value = user.id;
+    option.textContent = `${user.display_name} (${user.username})`;
+    select.appendChild(option);
+  });
+  dialog._directory = users || [];
+  dialog._members = (members || []).map((member) => ({ user_id: Number(member.user_id), access_level: member.access_level }));
+  renderShareMembers(dialog);
+  if (typeof dialog.showModal === "function") dialog.showModal();
+}
+
+on("workflow-share-add", "click", () => {
+  const dialog = $("workflow-share-dialog");
+  const userId = Number($("workflow-share-user").value);
+  if (!dialog || !userId) return;
+  const accessLevel = $("workflow-share-access").value;
+  dialog._members = (dialog._members || []).filter((member) => member.user_id !== userId);
+  dialog._members.push({ user_id: userId, access_level: accessLevel });
+  renderShareMembers(dialog);
+});
+
+on("workflow-share-save", "click", async () => {
+  const dialog = $("workflow-share-dialog");
+  if (!dialog?.dataset.workflowId) return;
+  try {
+    await api(`/workflows/${dialog.dataset.workflowId}/members`, {
+      method: "PUT",
+      body: JSON.stringify({ members: dialog._members || [] }),
+    });
+    dialog.close();
+    toast("Workflow sharing saved");
+  } catch (err) {
+    toast(err.message, true);
+  }
+});
+
+function renderShareMembers(dialog) {
+  const list = $("workflow-share-members");
+  list.replaceChildren();
+  const users = dialog._directory || [];
+  const members = dialog._members || [];
+  if (!members.length) {
+    const empty = document.createElement("div");
+    empty.className = "muted";
+    empty.textContent = "No users have access yet.";
+    list.appendChild(empty);
+    return;
+  }
+  members.forEach((member) => {
+    const user = users.find((item) => Number(item.id) === member.user_id);
+    const row = document.createElement("div");
+    row.className = "workflow-share-member-row";
+    const label = document.createElement("span");
+    label.textContent = `${user?.display_name || `User #${member.user_id}`} — ${member.access_level}`;
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "btn-danger-outline btn-sm";
+    remove.textContent = "Remove";
+    remove.addEventListener("click", () => { dialog._members = dialog._members.filter((item) => item.user_id !== member.user_id); renderShareMembers(dialog); });
+    row.append(label, remove);
+    list.appendChild(row);
+  });
 }
 
 function templateRow(tpl) {
@@ -1811,6 +1903,13 @@ if (workflowListElement && !workflowListElement.dataset.bound) {
       if (actionButton.getAttribute("data-action") === "edit") {
         goToWorkflowEditor(workflowId);
       }
+      if (actionButton.getAttribute("data-action") === "share") {
+        try {
+          await shareWorkflowById(workflowId);
+        } catch (err) {
+          toast(err.message, true);
+        }
+      }
       if (actionButton.getAttribute("data-action") === "delete") {
         try {
           await deleteWorkflowById(workflowId);
@@ -2347,7 +2446,13 @@ on("btn-editor-assistant-ask", "click", async () => {
   }
 });
 
-loadCurrentUser().catch((err) => toast(err.message, true));
+loadCurrentUser()
+  .then((user) => {
+    if ($("run-preset-id") && ((user?.permissions || []).includes("workflow.run") || (user?.roles || []).includes("admin"))) {
+      refreshRunArgPresets().catch((err) => toast(err.message, true));
+    }
+  })
+  .catch((err) => toast(err.message, true));
 checkApi();
 if ($("workflow-list") || $("editor-workflow-id") || $("run-workflow-id")) {
   refreshWorkflows().then(async () => {
@@ -2361,9 +2466,6 @@ if ($("workflow-list") || $("editor-workflow-id") || $("run-workflow-id")) {
       await refreshRunVersionsForWorkflow(initial.workflowId, initial.versionId);
     }
   });
-}
-if ($("run-preset-id")) {
-  refreshRunArgPresets();
 }
 if ($("template-list")) {
   refreshTemplates();

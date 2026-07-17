@@ -22,7 +22,8 @@ from app.services.workflow_run_control import WorkflowRunControl
 from app.services.workflow_run_repository import WorkflowRunRepository
 from app.services.workflow_run_dispatcher import WorkflowRunDispatcher
 from app.services.workflow_runner import WorkflowRunnerService
-from app.core.auth import current_user
+from app.core.auth import require_permission, require_workflow_access
+from app.services.permission_repository import PermissionRepository
 
 # Coordinates run APIs while keeping execution, persistence, and artifact path
 # rules in their respective services. Trace viewing uses a non-shell command.
@@ -57,19 +58,31 @@ def _open_trace_viewer(trace_path: Path) -> None:
 def list_workflow_runs(
     workflow_version_id: int | None = Query(default=None, ge=1),
     limit: int = Query(default=20, ge=1, le=100),
-    user: dict = Depends(current_user),
+    user: dict = Depends(require_permission("workflow.view")),
 ) -> list[WorkflowRunResponse]:
     """List recent runs, optionally filtered to a workflow version."""
-    return [WorkflowRunResponse(**row) for row in WorkflowRunRepository.list_runs(workflow_version_id, limit)]
+    return [
+        WorkflowRunResponse(**row)
+        for row in WorkflowRunRepository.list_runs(
+            workflow_version_id,
+            limit,
+            int(user["id"]),
+            "admin" in user.get("roles", []),
+        )
+    ]
 
 
 @router.post("", response_model=WorkflowRunResponse, status_code=status.HTTP_201_CREATED)
 def create_workflow_run(
     payload: WorkflowRunCreate,
     background_tasks: BackgroundTasks,
-    user: dict = Depends(current_user),
+    user: dict = Depends(require_workflow_access("workflow.run")),
 ) -> WorkflowRunResponse:
     """Validate and queue a run, then schedule its execution."""
+    if "admin" not in user.get("roles", []):
+        workflow_id = PermissionRepository.resource_workflow_id("version", payload.workflow_version_id)
+        if workflow_id is None or not PermissionRepository.can_access_workflow(int(user["id"]), workflow_id, "workflow.run"):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workflow version not found")
     try:
         run_id = WorkflowRunnerService.run_workflow_version(
             version_id=payload.workflow_version_id,
@@ -101,7 +114,7 @@ def create_workflow_run(
 
 
 @router.get("/{run_id}", response_model=WorkflowRunResponse)
-def get_workflow_run(run_id: int, user: dict = Depends(current_user)) -> WorkflowRunResponse:
+def get_workflow_run(run_id: int, user: dict = Depends(require_workflow_access("workflow.view"))) -> WorkflowRunResponse:
     """Return one run or a not-found response."""
     run = WorkflowRunRepository.get_run(run_id)
     if run is None:
@@ -112,7 +125,7 @@ def get_workflow_run(run_id: int, user: dict = Depends(current_user)) -> Workflo
 
 
 @router.post("/{run_id}/stop")
-def stop_workflow_run(run_id: int, user: dict = Depends(current_user)) -> dict[str, str]:
+def stop_workflow_run(run_id: int, user: dict = Depends(require_workflow_access("workflow.run"))) -> dict[str, str]:
     """Cancel queued work immediately or request cooperative cancellation."""
     run = WorkflowRunRepository.get_run(run_id)
     if run is None:
@@ -134,14 +147,14 @@ def stop_workflow_run(run_id: int, user: dict = Depends(current_user)) -> dict[s
 
 
 @router.get("/{run_id}/steps", response_model=list[WorkflowStepRunResponse])
-def list_workflow_run_steps(run_id: int, user: dict = Depends(current_user)) -> list[WorkflowStepRunResponse]:
+def list_workflow_run_steps(run_id: int, user: dict = Depends(require_workflow_access("workflow.view"))) -> list[WorkflowStepRunResponse]:
     """Return persisted step attempts for a run."""
     rows = WorkflowRunRepository.list_step_runs(run_id)
     return [WorkflowStepRunResponse(**row) for row in rows]
 
 
 @router.get("/{run_id}/artifacts", response_model=list[WorkflowRunArtifactResponse])
-def list_workflow_run_artifacts(run_id: int, user: dict = Depends(current_user)) -> list[WorkflowRunArtifactResponse]:
+def list_workflow_run_artifacts(run_id: int, user: dict = Depends(require_workflow_access("workflow.view"))) -> list[WorkflowRunArtifactResponse]:
     """List artifact metadata and construct client download URLs."""
     if WorkflowRunRepository.get_run(run_id) is None:
         raise HTTPException(
@@ -158,7 +171,7 @@ def list_workflow_run_artifacts(run_id: int, user: dict = Depends(current_user))
 
 
 @router.get("/{run_id}/artifacts/{artifact_id}")
-def download_workflow_run_artifact(run_id: int, artifact_id: int, user: dict = Depends(current_user)) -> FileResponse:
+def download_workflow_run_artifact(run_id: int, artifact_id: int, user: dict = Depends(require_workflow_access("workflow.view"))) -> FileResponse:
     """Serve a run-owned artifact after containment and file checks."""
     artifact = WorkflowRunRepository.get_artifact(run_id, artifact_id)
     if artifact is None:
@@ -186,7 +199,7 @@ def download_workflow_run_artifact(run_id: int, artifact_id: int, user: dict = D
 
 
 @router.post("/{run_id}/artifacts/{artifact_id}/open-trace")
-def open_workflow_run_trace(run_id: int, artifact_id: int, user: dict = Depends(current_user)) -> dict[str, str]:
+def open_workflow_run_trace(run_id: int, artifact_id: int, user: dict = Depends(require_workflow_access("workflow.view"))) -> dict[str, str]:
     """Launch only a run-owned ZIP trace through the local viewer."""
     artifact = WorkflowRunRepository.get_artifact(run_id, artifact_id)
     if artifact is None or str(artifact.get("artifact_type")) != "trace":
@@ -215,7 +228,7 @@ def open_workflow_run_trace(run_id: int, artifact_id: int, user: dict = Depends(
 
 @router.post("/{run_id}/troubleshoot", response_model=TroubleshootResponse)
 def troubleshoot_workflow_run(
-    run_id: int, payload: TroubleshootRequest, user: dict = Depends(current_user)
+    run_id: int, payload: TroubleshootRequest, user: dict = Depends(require_workflow_access("workflow.view"))
 ) -> TroubleshootResponse:
     """Send run diagnostics to the AI service and return structured advice."""
     run = WorkflowRunRepository.get_run(run_id)

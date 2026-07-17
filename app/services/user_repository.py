@@ -6,11 +6,26 @@ from app.services.passwords import hash_password, verify_password
 
 
 SELECT_COLUMNS = """
-    id, username, email, display_name, role, status, last_login_at, created_at, updated_at
+    id, username, email, display_name, status, last_login_at, created_at, updated_at
 """
 
 
 class UserRepository:
+    @staticmethod
+    def list_directory(limit: int = 500) -> list[dict]:
+        with get_db_cursor() as (_, cursor):
+            cursor.execute(
+                """
+                SELECT id, username, display_name
+                FROM users
+                WHERE status = 'active'
+                ORDER BY display_name, username
+                LIMIT %s
+                """,
+                (limit,),
+            )
+            return list(cursor.fetchall())
+
     @staticmethod
     def count_users() -> int:
         with get_db_cursor() as (_, cursor):
@@ -23,19 +38,25 @@ class UserRepository:
         with get_db_cursor() as (_, cursor):
             cursor.execute(
                 """
-                INSERT INTO users (username, email, display_name, password_hash, role, status)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                INSERT INTO users (username, email, display_name, password_hash, status)
+                VALUES (%s, %s, %s, %s, %s)
                 """,
                 (
                     payload.username.strip().lower(),
                     payload.email.strip().lower() if payload.email else None,
                     payload.display_name,
                     password_hash,
-                    payload.role,
                     payload.status,
                 ),
             )
             user_id = int(cursor.lastrowid)
+            cursor.execute(
+                """
+                INSERT IGNORE INTO user_roles (user_id, role_id)
+                SELECT %s, id FROM roles WHERE name = 'viewer'
+                """,
+                (user_id,),
+            )
         return UserRepository.get(user_id) or {}
 
     @staticmethod
@@ -79,14 +100,13 @@ class UserRepository:
             cursor.execute(
                 """
                 UPDATE users
-                SET username = %s, email = %s, display_name = %s, role = %s, status = %s
+                SET username = %s, email = %s, display_name = %s, status = %s
                 WHERE id = %s
                 """,
                 (
                     payload.username.strip().lower(),
                     payload.email.strip().lower() if payload.email else None,
                     payload.display_name,
-                    payload.role,
                     payload.status,
                     user_id,
                 ),

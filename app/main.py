@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from app.api.router import api_router
 from app.core.settings import get_settings
 from app.services.session_repository import SESSION_COOKIE_NAME, SessionRepository
+from app.services.permission_repository import PermissionRepository
 
 settings = get_settings()
 web_dir = Path(__file__).resolve().parent / "web"
@@ -53,13 +54,15 @@ def users_page(request: Request) -> FileResponse | RedirectResponse:
     user = _page_user(request)
     if user is None:
         return RedirectResponse("/login", status_code=303)
-    if user.get("role") != "admin":
-        return RedirectResponse("/ui", status_code=303)
     return FileResponse(str(web_dir / "users.html"))
 
 
 @app.get("/ui/editor", response_model=None)
 def ui_editor(request: Request) -> FileResponse | RedirectResponse:
-    if _page_user(request) is None:
+    user = _page_user(request)
+    if user is None:
         return RedirectResponse("/login", status_code=303)
+    roles, permissions = PermissionRepository.get_roles_and_permissions(int(user["id"]))
+    if "admin" not in roles and "workflow.edit" not in permissions:
+        return RedirectResponse("/ui", status_code=303)
     return FileResponse(str(editor_dist_dir / "index.html"))

@@ -114,8 +114,7 @@ $("bootstrap-form").addEventListener("submit", async (event) => {
         email: $("bootstrap-email").value || null,
         display_name: $("bootstrap-name").value,
         password: password.value,
-        role: "admin",
-        status: "active",
+      status: "active",
       }),
     });
     window.location.href = "/ui/users";

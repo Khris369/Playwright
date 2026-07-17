@@ -207,7 +207,7 @@
       if (!user) return;
       userLabel.textContent = user.display_name || user.username || "Account";
       userLabel.hidden = false;
-      if (user.role === "admin") linkElements.get("User Management").hidden = false;
+      if ((user.roles || []).includes("admin")) linkElements.get("User Management").hidden = false;
     })
     .catch(() => { userLabel.hidden = true; });
 })();

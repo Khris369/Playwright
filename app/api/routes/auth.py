@@ -8,6 +8,7 @@ from app.schemas.user import LoginRequest, UserCreate, UserPasswordChange, UserR
 from app.services.passwords import verify_password
 from app.services.session_repository import SESSION_COOKIE_NAME, SessionRepository
 from app.services.user_repository import UserRepository
+from app.services.permission_repository import PermissionRepository
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -22,6 +23,13 @@ def _set_session_cookie(response: Response, token: str, expires_at) -> None:
         secure=get_settings().environment.lower() in {"production", "prod"},
         path="/",
     )
+
+
+def _with_access_context(user: dict) -> dict:
+    roles, permissions = PermissionRepository.get_roles_and_permissions(int(user["id"]))
+    user["roles"] = roles
+    user["permissions"] = permissions
+    return user
 
 
 @router.get("/me", response_model=UserResponse)
@@ -41,7 +49,7 @@ def login(payload: LoginRequest, response: Response) -> UserResponse:
     UserRepository.record_login(int(user["id"]))
     _set_session_cookie(response, token, expires_at)
     user.pop("password_hash", None)
-    return UserResponse(**user)
+    return UserResponse(**_with_access_context(user))
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
@@ -79,10 +87,10 @@ def bootstrap_admin(payload: UserCreate, response: Response) -> UserResponse:
         email=payload.email,
         display_name=payload.display_name,
         password=payload.password,
-        role="admin",
         status="active",
     )
     user = UserRepository.create(admin_payload)
+    PermissionRepository.set_user_roles(int(user["id"]), ["admin"])
     token, expires_at = SessionRepository.create(int(user["id"]))
     _set_session_cookie(response, token, expires_at)
-    return UserResponse(**user)
+    return UserResponse(**_with_access_context(user))
