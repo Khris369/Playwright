@@ -33,6 +33,7 @@ class BrowserManager:
         self.context.on("page", self._on_page)
         self.page = await self.context.new_page()
         self.pages.append(self.page)
+        self.page.on("close", lambda page=self.page: self._on_page_closed(page))
         if start_url:
             await self.page.goto(start_url, wait_until="domcontentloaded")
         return self.page
@@ -40,8 +41,21 @@ class BrowserManager:
     def _on_page(self, page: Page) -> None:
         self.page = page
         self.pages.append(page)
+        page.on("close", lambda: self._on_page_closed(page))
         if self.on_page:
             self.on_page(page)
+
+    def _on_page_closed(self, closed_page: Page | None) -> None:
+        if closed_page is not self.page:
+            return
+        for page in reversed(self.pages):
+            try:
+                if not page.is_closed():
+                    self.page = page
+                    return
+            except Exception:
+                continue
+        self.page = None
 
     async def close(self) -> None:
         if self.context:

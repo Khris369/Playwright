@@ -16,7 +16,7 @@ Sign in to the editor and start the agent in another terminal. No token is requi
 python -m picker_agent --server ws://127.0.0.1:8000
 ```
 
-The agent prints a short pairing code. Enter it in the picker panel under **Agent pairing code**, then click **Pair agent**. FastAPI sends a scoped device token directly to the agent; the agent stores it locally and reconnects automatically on later launches. If the stored token is rejected after a server restart or expiry, the agent clears it and starts a new pairing flow. The code expires after five minutes and is usable once.
+The agent prints a short pairing code. Enter it in the editor's standalone **Picker agent** pairing control, then click **Pair agent**. FastAPI sends a scoped device token directly to the agent; the agent stores it locally and reconnects automatically on later launches. If the stored token is rejected after a server restart or expiry, the agent clears it and starts a new pairing flow. The code expires after five minutes and is usable once.
 
 If FastAPI or the WebSocket temporarily disconnects, the running agent retries automatically with bounded exponential backoff. You do not need to restart the agent for a transient server restart or network interruption.
 
@@ -67,7 +67,22 @@ Picker previews are scoped to the workflow node and locator field. You can start
 
 Server workflow access continues to use the application's cookie session, roles, and workflow edit access. Pairing uses a one-time five-minute code. The resulting device token is scoped to picker WebSocket access, stored locally by the agent, and expires after 30 days in this POC. It is not a general API credential and contains no target-site credentials. The legacy `POST /editor-picker/agent-token` endpoint remains available for development compatibility.
 
-Picker sessions, pairing requests, and device claims are opaque in-memory records, expire after their TTLs, and are bound to the user where applicable. This is intentionally limited to one FastAPI process: restarting it disconnects agents, loses active sessions, and requires pairing again. No Redis routing, durable database-backed device management, profile persistence, screenshot streaming, remote desktop, or cross-instance coordination is included.
+Picker sessions, pairing requests, and device claims are opaque in-memory records, expire after their TTLs, and are bound to the user where applicable. Without the optional Redis relay, this is intentionally limited to one FastAPI process: restarting it disconnects agents, loses active sessions, and requires pairing again. Durable database-backed device management, profile persistence, screenshot streaming, remote desktop, and distributed presence remain deferred.
+
+## Phase 4 shared routing (optional)
+
+Set `PICKER_REDIS_URL` on every FastAPI instance to enable Redis pub/sub
+routing for picker commands and editor results:
+
+```text
+PICKER_REDIS_URL=redis://127.0.0.1:6379/1
+```
+
+WebSocket connections remain local to the process that accepted them; Redis
+relays typed JSON messages to the process holding the target user's agent or
+editor socket. Leaving the setting unset preserves the local single-process
+mode. Session/device records are still in memory in this increment, so durable
+session storage and distributed presence/expiry are separate follow-up work.
 
 The local agent accepts only typed picker commands. It rejects unknown commands and non-HTTP(S) navigation schemes. It does not expose arbitrary Python, shell, filesystem, or server-provided JavaScript execution.
 

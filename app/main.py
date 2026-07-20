@@ -35,6 +35,7 @@ async def _expire_picker_sessions() -> None:
 @app.on_event("startup")
 async def start_picker_expiry_task() -> None:
     global _picker_expiry_task
+    await picker_connections.start_relay(settings.picker_redis_url)
     _picker_expiry_task = asyncio.create_task(_expire_picker_sessions())
 
 
@@ -42,6 +43,7 @@ async def start_picker_expiry_task() -> None:
 async def stop_picker_expiry_task() -> None:
     if _picker_expiry_task:
         _picker_expiry_task.cancel()
+    await picker_connections.stop_relay()
 app.mount("/ui/static", StaticFiles(directory=str(static_dir)), name="ui-static")
 if editor_dist_dir.exists():
     app.mount(

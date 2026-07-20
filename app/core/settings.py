@@ -17,6 +17,7 @@ class Settings:
     workflow_step_screenshots_enabled: bool
     workflow_artifact_retention_days: int
     workflow_artifacts_dir: str
+    picker_redis_url: str | None
 
 
 def get_settings() -> Settings:
@@ -32,4 +33,5 @@ def get_settings() -> Settings:
         workflow_step_screenshots_enabled=bool(cfg["workflow_step_screenshots_enabled"]),
         workflow_artifact_retention_days=int(cfg["workflow_artifact_retention_days"]),
         workflow_artifacts_dir=str(cfg["workflow_artifacts_dir"]),
+        picker_redis_url=str(cfg["picker_redis_url"]) if cfg.get("picker_redis_url") else None,
     )

@@ -105,7 +105,7 @@ header h1 {
     background: white;
 }
 
-.toolbar span {
+.toolbar > span {
     margin-left: auto;
 }
 
@@ -115,6 +115,142 @@ header h1 {
 
 .error {
     color: #b42318;
+}
+
+.agent-status-control {
+    position: relative;
+    flex: 0 1 auto;
+    min-width: 0;
+}
+
+.agent-status-trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    max-width: min(320px, 38vw);
+    min-height: 30px;
+    padding: 4px 8px;
+    border: 1px solid #cbd3e1;
+    border-radius: 6px;
+    background: #fff;
+    color: #26344d;
+    font-size: 12px;
+    white-space: nowrap;
+}
+
+.agent-status-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.agent-status-dot {
+    width: 8px;
+    height: 8px;
+    flex: 0 0 auto;
+    border-radius: 50%;
+    background: #b42318;
+}
+
+.agent-status-dot.is-connected {
+    background: #087a50;
+}
+
+.agent-status-chevron {
+    color: #667085;
+    font-size: 14px;
+}
+
+.agent-status-popover {
+    position: absolute;
+    z-index: 20;
+    top: calc(100% + 6px);
+    right: 0;
+    width: min(300px, calc(100vw - 24px));
+    padding: 12px;
+    border: 1px solid #cbd3e1;
+    border-radius: 7px;
+    background: #fff;
+    box-shadow: 0 5px 16px rgba(22, 34, 56, .12);
+    color: #26344d;
+    font-size: 12px;
+}
+
+.agent-status-heading,
+.agent-paired-summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin: 0 0 10px;
+}
+
+.agent-details {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    gap: 5px 10px;
+    margin: 0 0 10px;
+}
+
+.agent-details dt {
+    color: #667085;
+}
+
+.agent-details dd {
+    min-width: 0;
+    margin: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.agent-pairing-field {
+    display: grid;
+    gap: 4px;
+    margin-bottom: 8px;
+}
+
+.agent-status-popover input {
+    min-width: 0;
+    padding: 6px 7px;
+    border: 1px solid #cbd3e1;
+    border-radius: 4px;
+}
+
+.agent-status-popover button:not(.agent-status-trigger) {
+    padding: 6px 9px;
+}
+
+.agent-status-popover small {
+    display: block;
+    margin-top: 7px;
+    color: #667085;
+}
+
+.agent-paired-summary {
+    display: block;
+}
+
+.agent-paired-summary small {
+    margin-top: 3px;
+}
+
+.agent-unpair {
+    color: #b42318;
+}
+
+.agent-status-error {
+    display: block;
+    margin-top: 8px;
+}
+
+@media (max-width: 760px) {
+    .toolbar {
+        overflow: visible;
+    }
+
+    .agent-status-trigger {
+        max-width: 180px;
+    }
 }
 
 .workspace {

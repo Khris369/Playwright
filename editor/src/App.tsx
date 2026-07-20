@@ -22,6 +22,59 @@ function isTextEditingTarget(target: EventTarget | null) {
   return target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)
 }
 
+type PickerAgentInfo = { last_seen?: string; agent_version?: string; platform?: string; machine?: string; agent_id?: string }
+
+export function AgentPairingControl({ connected, info }: { connected: boolean; info?: PickerAgentInfo }) {
+  const [open, setOpen] = useState(false)
+  const [code, setCode] = useState('')
+  const [message, setMessage] = useState('')
+  const [pairedCode, setPairedCode] = useState(() => window.localStorage.getItem('workflow-picker-paired-code') ?? '')
+  const [pairedExpiry, setPairedExpiry] = useState(() => window.localStorage.getItem('workflow-picker-paired-expiry') ?? '')
+  const [submitting, setSubmitting] = useState(false)
+  const root = useRef<HTMLDivElement | null>(null)
+  const state = submitting ? 'Pairing' : message && !connected ? 'Failed' : connected ? (pairedCode ? 'Paired' : 'Connected') : 'Unavailable'
+  const label = submitting ? 'Pairing…' : connected ? (pairedCode ? `Agent connected · Paired to ${pairedCode}` : 'Agent connected') : 'Agent unavailable'
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') setOpen(false) }
+    const onPointer = (event: PointerEvent) => { if (open && root.current && !root.current.contains(event.target as Node)) setOpen(false) }
+    document.addEventListener('keydown', onKey)
+    document.addEventListener('pointerdown', onPointer)
+    return () => { document.removeEventListener('keydown', onKey); document.removeEventListener('pointerdown', onPointer) }
+  }, [open])
+  const pair = async () => {
+    if (submitting || code.trim().length < 6) return
+    setSubmitting(true); setMessage('')
+    try {
+      const response = await api<{ paired: boolean; expires_at?: string }>('/editor-picker/pairings/approve', { method: 'POST', body: JSON.stringify({ code: code.trim().toUpperCase() }) })
+      const normalized = code.trim().toUpperCase()
+      setPairedCode(normalized); window.localStorage.setItem('workflow-picker-paired-code', normalized)
+      if (response.expires_at) { setPairedExpiry(response.expires_at); window.localStorage.setItem('workflow-picker-paired-expiry', response.expires_at) }
+      setCode('')
+      setMessage('Pairing approved; waiting for agent')
+    } catch (error) { setMessage((error as Error).message) } finally { setSubmitting(false) }
+  }
+  const unpair = async () => {
+    setSubmitting(true); setMessage('')
+    try { await api('/editor-picker/pairings/device', { method: 'DELETE' }); setPairedCode(''); setPairedExpiry(''); window.localStorage.removeItem('workflow-picker-paired-code'); window.localStorage.removeItem('workflow-picker-paired-expiry'); setMessage('Agent unpaired') }
+    catch (error) { setMessage((error as Error).message) } finally { setSubmitting(false) }
+  }
+  return <div className="agent-status-control" ref={root}>
+    <button type="button" className="agent-status-trigger" aria-haspopup="dialog" aria-expanded={open} aria-label="Local picker agent status" onClick={() => setOpen((value) => !value)}><span className={`agent-status-dot ${connected ? 'is-connected' : 'is-unavailable'}`} aria-hidden="true"/><span className="agent-status-label">{label}</span><span className="agent-status-chevron" aria-hidden="true">⌄</span></button>
+    {open && <div className="agent-status-popover" role="dialog" aria-label="Picker agent details">
+      <div className="agent-status-heading"><strong>Local picker agent</strong><span className={connected ? 'valid' : 'error'}>{state}</span></div>
+      <dl className="agent-details">
+        {info?.last_seen && <><dt>Last seen</dt><dd>{new Date(info.last_seen).toLocaleString()}</dd></>}
+        {info?.agent_id && <><dt>Agent ID</dt><dd title={info.agent_id}>{info.agent_id}</dd></>}
+        {info?.machine && <><dt>Machine</dt><dd>{info.machine}</dd></>}
+        {info?.agent_version && <><dt>Version</dt><dd>{info.agent_version}</dd></>}
+        {info?.platform && <><dt>Platform</dt><dd>{info.platform}</dd></>}
+      </dl>
+      {!pairedCode ? <><label className="agent-pairing-field">Pairing code<input aria-label="Agent pairing code" autoFocus value={code} placeholder="AB12-CD34" disabled={submitting} onChange={(event) => setCode(event.target.value.toUpperCase().replace(/[^A-Z0-9-]/g, ''))} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void pair() } }} /></label><button type="button" disabled={submitting || code.length < 6} onClick={() => void pair()}>{submitting ? 'Pairing…' : 'Pair agent'}</button><small>Enter the code printed by the local picker agent.</small></> : <><p className="agent-paired-summary">Paired to <code>{pairedCode}</code>{pairedExpiry && <small>Expires {new Date(pairedExpiry).toLocaleString()}</small>}</p><button type="button" className="agent-unpair" disabled={submitting} onClick={() => void unpair()}>Unpair agent</button><button type="button" disabled={submitting} onClick={() => { setPairedCode(''); setPairedExpiry(''); setMessage('') }}>Pair different agent</button></>}
+      {message && <span className="error agent-status-error" role="alert">{message}</span>}
+    </div>}
+  </div>
+}
+
 export default function App() {
   const workflowId = Number(new URLSearchParams(location.search).get('workflow_id'))
   const initial = useMemo(blankGraph, [])
@@ -48,6 +101,7 @@ export default function App() {
   const reactFlowInstance = useRef<any>(null)
   const pickerClientId = useRef(crypto.randomUUID()).current
   const [pickerAgentConnected, setPickerAgentConnected] = useState(false)
+  const [pickerAgentInfo, setPickerAgentInfo] = useState<PickerAgentInfo>()
   const [pickerEvent, setPickerEvent] = useState<{ type: string; session_id?: string; payload?: Record<string, unknown> }>()
   // Picker drafts are keyed by node and locator field so unfinished selections
   // survive switching between nodes without changing workflow arguments.
@@ -111,14 +165,14 @@ export default function App() {
       socket.onmessage = (message) => {
         try {
           const event = JSON.parse(message.data) as { type: string; session_id?: string; payload?: Record<string, unknown> }
-          if (event.type === 'editor.connected') setPickerAgentConnected(Boolean(event.payload?.agent_connected))
+          if (event.type === 'editor.connected') { setPickerAgentConnected(Boolean(event.payload?.agent_connected)); setPickerAgentInfo(event.payload as PickerAgentInfo) }
           else setPickerEvent(event)
         } catch { /* Ignore invalid broker messages. */ }
       }
       socket.onclose = () => { if (!stopped) retry = window.setTimeout(connect, 2000) }
     }
     connect()
-    const refresh = window.setInterval(() => api<{ connected: boolean }>('/editor-picker/agent-status').then((status) => setPickerAgentConnected(status.connected)).catch(() => setPickerAgentConnected(false)), 10000)
+    const refresh = window.setInterval(() => api<{ connected: boolean } & PickerAgentInfo>('/editor-picker/agent-status').then((status) => { setPickerAgentConnected(status.connected); setPickerAgentInfo(status) }).catch(() => { setPickerAgentConnected(false); setPickerAgentInfo(undefined) }), 10000)
     return () => { stopped = true; socket?.close(); if (retry) clearTimeout(retry); clearInterval(refresh) }
   }, [pickerClientId])
 
@@ -312,7 +366,7 @@ export default function App() {
   return <main className="app-shell">
     <header><a href="/ui">Dashboard</a><h1>Workflow editor</h1><nav className="editor-tabs" aria-label="Editor sections"><span className="editor-tab is-active" aria-current="page">Editor</span><button className="editor-tab" type="button" hidden={!canRun} disabled={!canOpenRuns} title={canOpenRuns ? 'Open the dashboard Runs tab for the current workflow and version.' : 'Load a workflow and version first.'} onClick={() => { window.location.href = runsUrl }}>Runs</button></nav><button type="button" aria-expanded={assistantOpen} onClick={() => setAssistantOpen((open) => !open)}>Assistant</button><select value={version?.id ?? ''} onChange={(e) => { const next = versions.find((item) => item.id === Number(e.target.value)); if (next && (!dirty || confirm('Discard unsaved changes?'))) loadVersion(next) }}>{versions.map((item) => <option value={item.id} key={item.id}>v{item.version_number}{item.is_published ? ' · published' : ' · draft'}</option>)}</select><button onClick={createVersion}>New version</button><button onClick={togglePublished} disabled={!version || (!version.is_published && !validation.valid)}>{version?.is_published ? 'Unpublish' : 'Publish'}</button><button onClick={save} disabled={readOnly || !dirty || !validation.valid}>Save</button><span>{message}</span></header>
     {assistantOpen && <div className="assistant-drawer"><AssistantPanel workflowId={workflowId || undefined} versionId={version?.id} definition={definition} stepTypes={stepTypes} disabled={readOnly} onApply={applyAssistantSteps} onClose={() => setAssistantOpen(false)} /></div>}
-    <div className="toolbar"><button disabled={!past.length || readOnly} onClick={undo}>Undo</button><button disabled={!future.length || readOnly} onClick={redo}>Redo</button><button disabled={readOnly} onClick={() => commit(arrange(nodes, edges))}>Arrange</button><button disabled={!selected || readOnly} onClick={duplicate}>Duplicate</button><span className={validation.valid ? 'valid' : 'error'}>{validation.valid ? `${validation.compiled_order.length} steps · valid` : `${validation.errors.length} validation errors`}</span></div>
+    <div className="toolbar"><button disabled={!past.length || readOnly} onClick={undo}>Undo</button><button disabled={!future.length || readOnly} onClick={redo}>Redo</button><button disabled={readOnly} onClick={() => commit(arrange(nodes, edges))}>Arrange</button><button disabled={!selected || readOnly} onClick={duplicate}>Duplicate</button><span className={validation.valid ? 'valid' : 'error'}>{validation.valid ? `${validation.compiled_order.length} steps · valid` : `${validation.errors.length} validation errors`}</span><AgentPairingControl connected={pickerAgentConnected} info={pickerAgentInfo}/></div>
     <div className="workspace">
       <Palette stepTypes={stepTypes} disabled={readOnly} onAdd={addStep} onControl={addControl} onComment={addComment}/>
       <section className="canvas" ref={reactFlowWrapper}>

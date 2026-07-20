@@ -53,7 +53,8 @@ def create_agent_token(user: dict = Depends(current_user)) -> PickerAgentTokenRe
 @router.get("/agent-status")
 def agent_status(user: dict = Depends(current_user)) -> dict:
     picker_sessions.expire()
-    return {"connected": int(user["id"]) in picker_connections.agents}
+    user_id = int(user["id"])
+    return {"connected": user_id in picker_connections.agents, **picker_connections.agent_info.get(user_id, {})}
 
 
 @router.post("/pairings/approve")
@@ -68,7 +69,18 @@ async def approve_pairing(payload: PickerPairingApprove, user: dict = Depends(cu
     await socket.send_json({"version": 1, "type": "pairing.approved", "payload": {"device_token": claim.token, "expires_at": claim.expires_at.isoformat()}})
     await socket.close()
     picker_connections.pairings.pop(payload.code, None)
-    return {"paired": True}
+    return {"paired": True, "expires_at": claim.expires_at}
+
+
+@router.delete("/pairings/device")
+async def unpair_device(user: dict = Depends(current_user)) -> dict:
+    user_id = int(user["id"])
+    revoked = picker_sessions.revoke_device_tokens(user_id)
+    socket = picker_connections.agents.get(user_id)
+    if socket is not None:
+        await socket.close(code=1000, reason="Picker agent unpaired")
+    picker_connections.clear_agent_info(user_id)
+    return {"unpaired": revoked > 0, "revoked": revoked}
 
 
 @router.post("/sessions", response_model=PickerSessionResponse, status_code=status.HTTP_201_CREATED)
@@ -165,6 +177,7 @@ async def agent_socket(websocket: WebSocket) -> None:
         while True:
             message = _parse_message(await websocket.receive_json(), AGENT_EVENTS)
             if message.type == "agent.ready":
+                picker_connections.set_agent_info(claim.user_id, message.payload)
                 continue
             if not message.session_id:
                 raise ValueError("Session message requires session_id")
@@ -204,6 +217,7 @@ async def agent_socket(websocket: WebSocket) -> None:
     finally:
         if picker_connections.agents.get(claim.user_id) is websocket:
             del picker_connections.agents[claim.user_id]
+            picker_connections.clear_agent_info(claim.user_id)
         for session in picker_sessions.sessions.values():
             if session.user_id == claim.user_id and session.state not in TERMINAL_STATES:
                 session.state = "failed"
@@ -243,7 +257,8 @@ async def editor_socket(websocket: WebSocket) -> None:
         if not client_id or len(client_id) > 100:
             raise ValueError("Invalid editor client")
         picker_connections.editors[(int(user["id"]), client_id)] = websocket
-        await websocket.send_json({"version": 1, "type": "editor.connected", "payload": {"agent_connected": int(user["id"]) in picker_connections.agents}})
+        user_id = int(user["id"])
+        await websocket.send_json({"version": 1, "type": "editor.connected", "payload": {"agent_connected": user_id in picker_connections.agents, **picker_connections.agent_info.get(user_id, {})}})
         while True:
             await websocket.receive_text()  # Editor sends no further commands in Phase 1.
     except (WebSocketDisconnect, ValueError):

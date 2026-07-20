@@ -66,6 +66,10 @@ class AgentSession:
         if self.inspector:
             await self.inspector.stop()
         self.inspection_active = False
+        page = self.browser.page
+        if page is None or page.is_closed():
+            await self.emit("picker.error", self.session_id, {"code": "page_closed", "message": "The picker page closed before the element could be validated"})
+            return
         frame_id = node.get("picker_frame_id")
         main_frame_id = node.get("picker_main_frame_id")
         if frame_id and main_frame_id and frame_id != main_frame_id:
@@ -80,10 +84,14 @@ class AgentSession:
             await self.emit("picker.error", self.session_id, {"message": "No supported locator candidates were found"})
             return
         validated = []
-        for candidate in candidates:
-            count = await self._count(candidate.locator)
-            if count == 1:
-                validated.append((candidate, count))
+        try:
+            for candidate in candidates:
+                count = await self._count(candidate.locator)
+                if count == 1:
+                    validated.append((candidate, count))
+        except Exception:
+            await self.emit("picker.error", self.session_id, {"code": "page_closed", "message": "The picker page changed or closed before the locator could be validated"})
+            return
         if not validated:
             await self.emit("picker.error", self.session_id, {"message": "No unique supported locator could be validated"})
             return
@@ -94,7 +102,7 @@ class AgentSession:
 
     async def _count(self, locator: dict[str, Any]) -> int:
         page = self.browser.page
-        if page is None:
+        if page is None or page.is_closed():
             return 0
         if locator["strategy"] == "role":
             return await page.get_by_role(locator["role"], name=locator["name"], exact=locator.get("exact", True)).count()

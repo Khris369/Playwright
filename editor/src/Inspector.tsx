@@ -12,7 +12,7 @@ type Props = {
 
 type PickerEvent = { type: string; session_id?: string; payload?: Record<string, unknown> }
 type LocatorResult = { locator: LocatorValue; fallback_locators?: LocatorValue[]; element?: { tag_name?: string; text?: string | null; role?: string | null }; validation?: { match_count?: number; matches_selected_element?: boolean } }
-export type PickerDraft = { sessionId?: string; status?: string; requestedUrl: string; pairingCode: string; result?: LocatorResult }
+export type PickerDraft = { sessionId?: string; status?: string; requestedUrl: string; result?: LocatorResult }
 
 function describeLocator(locator: LocatorValue): string {
   const strategy = String(locator.strategy ?? 'locator')
@@ -203,12 +203,11 @@ function LocatorEditor({ value, disabled, onChange }: { value: unknown; disabled
 }
 
 function PickerControls({ workflowId, nodeId, field, disabled, clientId, agentConnected, event, onAccept, draft, onDraftChange }: { workflowId: number; nodeId: string; field: string; disabled: boolean; clientId: string; agentConnected: boolean; event?: PickerEvent; onAccept: (locator: LocatorValue) => void; draft?: PickerDraft; onDraftChange: (next: PickerDraft) => void }) {
-  const [localDraft, setLocalDraft] = useState<PickerDraft>({ requestedUrl: '', pairingCode: '' })
+  const [localDraft, setLocalDraft] = useState<PickerDraft>({ requestedUrl: '' })
   const currentDraft = draft ?? localDraft
   const sessionId = currentDraft.sessionId
   const status = currentDraft.status ?? (agentConnected ? 'Browser ready' : 'Agent unavailable')
   const requestedUrl = currentDraft.requestedUrl
-  const pairingCode = currentDraft.pairingCode
   const result = currentDraft.result
   const update = (changes: Partial<PickerDraft>) => {
     const next = { ...currentDraft, ...changes }
@@ -235,12 +234,6 @@ function PickerControls({ workflowId, nodeId, field, disabled, clientId, agentCo
       update({ sessionId: created.session_id, status: created.status === 'waiting_for_agent' ? 'Waiting for agent' : 'Opening browser', result: undefined })
     } catch (error) { update({ status: (error as Error).message }) }
   }
-  const pair = async () => {
-    try {
-      await api('/editor-picker/pairings/approve', { method: 'POST', body: JSON.stringify({ code: pairingCode.trim().toUpperCase() }) })
-      update({ status: 'Pairing approved; waiting for agent', pairingCode: '' })
-    } catch (error) { update({ status: (error as Error).message }) }
-  }
   const inspect = async () => { if (!sessionId) return; try { await api(`/editor-picker/sessions/${sessionId}/inspect`, { method: 'POST' }); update({ status: 'Starting selection' }) } catch (error) { update({ status: (error as Error).message }) } }
   const stopInspection = async () => { if (!sessionId) return; try { await api(`/editor-picker/sessions/${sessionId}/inspect/cancel`, { method: 'POST' }); update({ result: undefined, status: 'Browser ready' }) } catch (error) { update({ status: (error as Error).message }) } }
   const cancel = async () => {
@@ -257,7 +250,7 @@ function PickerControls({ workflowId, nodeId, field, disabled, clientId, agentCo
 
   return <section className="picker-controls" aria-label={`Element picker for ${field}`}>
     <h3>Local element picker</h3><p className={agentConnected ? 'valid' : 'error'}>{status}</p>
-    {!sessionId && <>{!agentConnected && <div className="picker-pairing"><label>Agent pairing code<input disabled={disabled} value={pairingCode} placeholder="AB12-CD34" onChange={(e) => update({ pairingCode: e.target.value.toUpperCase().replace(/[^A-Z0-9-]/g, '') })} /></label><button type="button" disabled={disabled || pairingCode.length < 6} onClick={pair}>Pair agent</button></div>}<label>Optional start URL<input disabled={disabled || !agentConnected} value={requestedUrl} placeholder="https://example.com" onChange={(e) => update({ requestedUrl: e.target.value })} /></label><button type="button" disabled={disabled || !agentConnected} onClick={start}>Pick Element</button></>}
+    {!sessionId && <><label>Optional start URL<input disabled={disabled || !agentConnected} value={requestedUrl} placeholder="https://example.com" onChange={(e) => update({ requestedUrl: e.target.value })} /></label><button type="button" disabled={disabled || !agentConnected} onClick={start}>Pick Element</button></>}
     {sessionId && !result && <><button type="button" disabled={disabled || status !== 'Browser ready'} onClick={inspect}>Start Selecting</button><button type="button" onClick={cancel}>{status === 'Select an element' ? 'Cancel inspection' : 'Close picker'}</button></>}
     {result && <div className="picker-preview">
       <h4>Selected element</h4>
@@ -267,7 +260,7 @@ function PickerControls({ workflowId, nodeId, field, disabled, clientId, agentCo
       <p className={result.validation?.matches_selected_element ? 'valid' : 'error'}>{result.validation?.matches_selected_element ? `Validated · ${result.validation?.match_count ?? '?'} match` : 'Could not validate this locator'}</p>
       <details><summary>Technical locator details</summary><pre>{JSON.stringify(result.locator, null, 2)}</pre></details>
       {!!result.fallback_locators?.length && <details><summary>{result.fallback_locators.length} fallback locator{result.fallback_locators.length === 1 ? '' : 's'}</summary><ul>{result.fallback_locators.map((locator, index) => <li key={index}>{describeLocator(locator)}<details><summary>Details</summary><pre>{JSON.stringify(locator, null, 2)}</pre></details></li>)}</ul></details>}
-      <div className="picker-actions"><button type="button" disabled={disabled || !result.validation?.matches_selected_element} onClick={async () => { try { await api(`/editor-picker/sessions/${sessionId}/complete`, { method: 'POST' }); onAccept(result.locator); update({ status: 'Locator accepted locally; save the draft when ready', sessionId: undefined }) } catch (error) { update({ status: (error as Error).message }) } }}>Accept locator</button><button type="button" onClick={() => { void stopInspection() }}>Pick Again</button></div>
+      <div className="picker-actions"><button type="button" disabled={disabled || !result.validation?.matches_selected_element} onClick={async () => { try { await api(`/editor-picker/sessions/${sessionId}/complete`, { method: 'POST' }); onAccept(result.locator); update({ status: 'Locator accepted locally; save the draft when ready', sessionId: undefined, result: undefined }) } catch (error) { update({ status: (error as Error).message }) } }}>Accept locator</button><button type="button" onClick={() => { void stopInspection() }}>Pick Again</button></div>
     </div>}
   </section>
 }

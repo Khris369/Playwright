@@ -89,6 +89,14 @@ class PickerSessionService:
         claim = self.device_tokens.get(token)
         return claim
 
+    def revoke_device_tokens(self, user_id: int) -> int:
+        revoked = 0
+        for token, claim in list(self.device_tokens.items()):
+            if claim.user_id == user_id:
+                del self.device_tokens[token]
+                revoked += 1
+        return revoked
+
     def create(self, user_id: int, workflow_id: int, node_id: str, client_id: str, requested_url: str | None) -> PickerSession:
         self.expire()
         session = PickerSession(secrets.token_urlsafe(24), user_id, workflow_id, node_id, client_id, requested_url, self.now() + self.session_ttl)

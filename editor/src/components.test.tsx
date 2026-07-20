@@ -2,11 +2,39 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { describe, expect, it, vi } from 'vitest'
 import { Palette } from './Palette'
 import { Inspector } from './Inspector'
+import { AgentPairingControl } from './App'
 import type { GraphNode, StepType } from './types'
 
 const step: StepType = { key: 'wait_timeout', name: 'Wait timeout', category: 'Wait', description: 'Bounded wait', default_args: { timeout_ms: 1000 }, args_schema: {}, editor_schema: { fields: [{ path: 'timeout_ms', widget: 'text' }] } }
 
 describe('editor components', () => {
+  it('opens and closes the global agent status popover', () => {
+    render(<AgentPairingControl connected={false} />)
+    const trigger = screen.getByRole('button', { name: 'Local picker agent status' })
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    fireEvent.click(trigger)
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('submits pairing from the popover and supports unpairing', async () => {
+    window.localStorage.clear()
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ paired: true, expires_at: '2030-01-01T00:00:00Z' }) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ unpaired: true, revoked: 1 }) })
+    vi.stubGlobal('fetch', fetchMock)
+    render(<AgentPairingControl connected={false} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Local picker agent status' }))
+    fireEvent.change(screen.getByLabelText('Agent pairing code'), { target: { value: 'AB12-CD34' } })
+    fireEvent.keyDown(screen.getByLabelText('Agent pairing code'), { key: 'Enter' })
+    await waitFor(() => expect(screen.getByText(/Paired to/)).toBeInTheDocument())
+    expect(fetchMock).toHaveBeenCalledWith('/editor-picker/pairings/approve', expect.objectContaining({ method: 'POST' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Unpair agent' }))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/editor-picker/pairings/device', expect.objectContaining({ method: 'DELETE' })))
+    vi.unstubAllGlobals()
+  })
+
   it('searches the palette and creates a node', () => {
     const add = vi.fn(); render(<Palette stepTypes={[step]} disabled={false} onAdd={add} onComment={() => undefined}/>)
     fireEvent.change(screen.getByLabelText('Search nodes'), { target: { value: 'wait' } })
