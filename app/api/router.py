@@ -4,6 +4,7 @@ from fastapi import APIRouter
 
 from app.api.routes.auth import router as auth_router
 from app.api.routes.editor_assistant import router as editor_assistant_router
+from app.api.routes.editor_picker import router as editor_picker_router
 from app.api.routes.health import router as health_router
 from app.api.routes.run_arg_presets import router as run_arg_presets_router
 from app.api.routes.step_types import router as step_types_router
@@ -16,6 +17,7 @@ from app.api.routes.workflow_definitions import router as workflow_definitions_r
 api_router = APIRouter()
 api_router.include_router(auth_router)
 api_router.include_router(editor_assistant_router)
+api_router.include_router(editor_picker_router)
 api_router.include_router(health_router)
 api_router.include_router(run_arg_presets_router)
 api_router.include_router(step_types_router)

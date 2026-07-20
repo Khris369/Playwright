@@ -46,6 +46,9 @@ export default function App() {
   const reconnectSucceeded = useRef(true)
   const reactFlowWrapper = useRef<HTMLElement | null>(null)
   const reactFlowInstance = useRef<any>(null)
+  const pickerClientId = useRef(crypto.randomUUID()).current
+  const [pickerAgentConnected, setPickerAgentConnected] = useState(false)
+  const [pickerEvent, setPickerEvent] = useState<{ type: string; session_id?: string; payload?: Record<string, unknown> }>()
 
   const readOnly = Boolean(version?.is_published)
   const canOpenRuns = Boolean(workflowId && version && canRun)
@@ -93,6 +96,28 @@ export default function App() {
       .then((user) => setCanRun(Boolean(user.permissions?.includes('workflow.run') || user.roles?.includes('admin'))))
       .catch(() => setCanRun(false))
   }, [])
+
+  useEffect(() => {
+    let socket: WebSocket | undefined
+    let retry: number | undefined
+    let stopped = false
+    const connect = () => {
+      const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
+      socket = new WebSocket(`${protocol}//${location.host}/editor-picker/editor`)
+      socket.onopen = () => socket?.send(JSON.stringify({ version: 1, type: 'editor.connect', payload: { client_id: pickerClientId } }))
+      socket.onmessage = (message) => {
+        try {
+          const event = JSON.parse(message.data) as { type: string; session_id?: string; payload?: Record<string, unknown> }
+          if (event.type === 'editor.connected') setPickerAgentConnected(Boolean(event.payload?.agent_connected))
+          else setPickerEvent(event)
+        } catch { /* Ignore invalid broker messages. */ }
+      }
+      socket.onclose = () => { if (!stopped) retry = window.setTimeout(connect, 2000) }
+    }
+    connect()
+    const refresh = window.setInterval(() => api<{ connected: boolean }>('/editor-picker/agent-status').then((status) => setPickerAgentConnected(status.connected)).catch(() => setPickerAgentConnected(false)), 10000)
+    return () => { stopped = true; socket?.close(); if (retry) clearTimeout(retry); clearInterval(refresh) }
+  }, [pickerClientId])
 
   const checkpoint = useCallback(() => {
     setPast((items) => [...items.slice(-99), { nodes, edges }]); setFuture([])
@@ -332,7 +357,7 @@ export default function App() {
           </div>
         )}
       </section>
-      <Inspector node={selected} stepType={selectedType} readOnly={readOnly} onChange={updateSelected}/>
+      <Inspector node={selected} stepType={selectedType} readOnly={readOnly} onChange={updateSelected} picker={workflowId ? { workflowId, clientId: pickerClientId, agentConnected: pickerAgentConnected, event: pickerEvent } : undefined}/>
     </div>
     <section className={`bottom-panels ${jsonOpen ? 'is-expanded' : ''}`}><details open={jsonOpen} onToggle={(event) => setJsonOpen(event.currentTarget.open)}><summary>Definition JSON preview / validated import</summary><div className="json-panel-content"><textarea aria-label="Definition JSON" value={jsonImport || JSON.stringify(definition, null, 2)} onChange={(e) => setJsonImport(e.target.value)}/><button disabled={readOnly} onClick={importDefinition}>Import and validate</button></div></details></section>
   </main>

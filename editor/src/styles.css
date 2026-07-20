@@ -567,3 +567,17 @@ header h1 {
     max-height: 12rem;
     overflow: auto;
 }
+.picker-controls {
+  margin-top: 1rem;
+  padding: .85rem;
+  border: 1px solid var(--border, #d7dce5);
+  border-radius: .55rem;
+  background: var(--panel, #f8fafc);
+}
+.picker-controls h3, .picker-preview h4 { margin: 0 0 .4rem; }
+.picker-preview { margin-top: .75rem; }
+.picker-element-summary, .picker-locator-summary { margin: .35rem 0; }
+.picker-locator-summary { padding: .6rem; border-radius: .4rem; background: #fff; }
+.picker-preview pre { max-height: 10rem; overflow: auto; padding: .55rem; background: #111827; color: #e5e7eb; border-radius: .35rem; font-size: .75rem; }
+.picker-preview ul { margin: .5rem 0; padding-left: 1.25rem; }
+.picker-actions { display: flex; gap: .5rem; margin-top: .75rem; }

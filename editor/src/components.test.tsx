@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { Palette } from './Palette'
 import { Inspector } from './Inspector'
@@ -76,5 +76,25 @@ describe('editor components', () => {
     expect(input).toHaveAttribute('type', 'number')
     fireEvent.change(input, { target: { value: '2.5' } })
     expect(change).toHaveBeenCalledWith(expect.objectContaining({ args: { timeout_ms: 2500 } }))
+  })
+
+  it('shows picker availability and accepts a locator only into local node state', async () => {
+    const click: StepType = { ...step, key: 'click', name: 'Click', default_args: { target: { strategy: 'label', label: 'Field label', exact: true } }, editor_schema: { fields: [{ path: 'target', widget: 'locator' }] } }
+    const node: GraphNode = { id: 'click', type: 'workflow', position: { x: 0, y: 0 }, data: { kind: 'step', step_type: 'click', args: click.default_args } }
+    const change = vi.fn()
+    render(<Inspector node={node} stepType={click} readOnly={false} onChange={change} picker={{ workflowId: 1, clientId: 'xxxxxxxxxxxxxxxx', agentConnected: false }} />)
+    expect(screen.getByText('Agent unavailable')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Pick Element' })).toBeDisabled()
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 201, json: async () => ({ session_id: 's', status: 'waiting_for_agent' }) }))
+    const active = render(<Inspector node={node} stepType={click} readOnly={false} onChange={change} picker={{ workflowId: 1, clientId: 'xxxxxxxxxxxxxxxx', agentConnected: true }} />)
+    fireEvent.click(within(active.container).getByRole('button', { name: 'Pick Element' }))
+    await waitFor(() => expect(within(active.container).getByText('Waiting for agent')).toBeInTheDocument())
+    active.rerender(<Inspector node={node} stepType={click} readOnly={false} onChange={change} picker={{ workflowId: 1, clientId: 'xxxxxxxxxxxxxxxx', agentConnected: true, event: { type: 'picker.element.selected', session_id: 's', payload: { locator: { strategy: 'role', role: 'button', name: 'Submit', exact: true }, validation: { match_count: 1, matches_selected_element: true } } } }} />)
+    fireEvent.click(within(active.container).getByRole('button', { name: 'Accept locator' }))
+    await waitFor(() => expect(change).toHaveBeenCalledWith(expect.objectContaining({ args: { target: { strategy: 'role', role: 'button', name: 'Submit', exact: true } } })))
+    // Inspector acceptance has no publish or run action.
+    expect(screen.queryByText('Publish')).not.toBeInTheDocument()
+    vi.unstubAllGlobals()
   })
 })

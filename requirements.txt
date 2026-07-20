@@ -6,3 +6,4 @@ pymysql
 celery
 redis
 playwright
+websockets

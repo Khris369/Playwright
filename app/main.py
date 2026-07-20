@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import asyncio
 
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, RedirectResponse
@@ -10,6 +11,8 @@ from app.api.router import api_router
 from app.core.settings import get_settings
 from app.services.session_repository import SESSION_COOKIE_NAME, SessionRepository
 from app.services.permission_repository import PermissionRepository
+from app.services.picker_connection_manager import picker_connections
+from app.services.picker_session_service import picker_sessions
 
 settings = get_settings()
 web_dir = Path(__file__).resolve().parent / "web"
@@ -18,6 +21,27 @@ editor_dist_dir = web_dir / "editor-dist"
 
 app = FastAPI(title=settings.app_name, debug=settings.debug)
 app.include_router(api_router)
+_picker_expiry_task: asyncio.Task | None = None
+
+
+async def _expire_picker_sessions() -> None:
+    while True:
+        await asyncio.sleep(5)
+        for session in picker_sessions.expire():
+            await picker_connections.send_agent(session.user_id, {"version": 1, "type": "session.close", "session_id": session.id, "payload": {}})
+            await picker_connections.send_editor(session.user_id, session.client_id, {"version": 1, "type": "picker.session.updated", "session_id": session.id, "payload": {"status": "expired", "expires_at": session.expires_at.isoformat()}})
+
+
+@app.on_event("startup")
+async def start_picker_expiry_task() -> None:
+    global _picker_expiry_task
+    _picker_expiry_task = asyncio.create_task(_expire_picker_sessions())
+
+
+@app.on_event("shutdown")
+async def stop_picker_expiry_task() -> None:
+    if _picker_expiry_task:
+        _picker_expiry_task.cancel()
 app.mount("/ui/static", StaticFiles(directory=str(static_dir)), name="ui-static")
 if editor_dist_dir.exists():
     app.mount(
