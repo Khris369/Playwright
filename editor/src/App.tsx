@@ -7,7 +7,7 @@ import '@xyflow/react/dist/style.css'
 import { api, ApiError } from './api'
 import { arrange, blankGraph, fromDefinition, isValidConnection, linearOrder, removeNode, rewireOrder, resolveHandleSide, toDefinition, uid } from './graph'
 import { spawnNodePosition } from './spawn'
-import { Inspector } from './Inspector'
+import { Inspector, type PickerDraft } from './Inspector'
 import { Palette } from './Palette'
 import { dashboardRunsUrl } from './navigation'
 import type { GraphEdge, GraphNode, StepType, ValidationResult, Version } from './types'
@@ -49,6 +49,9 @@ export default function App() {
   const pickerClientId = useRef(crypto.randomUUID()).current
   const [pickerAgentConnected, setPickerAgentConnected] = useState(false)
   const [pickerEvent, setPickerEvent] = useState<{ type: string; session_id?: string; payload?: Record<string, unknown> }>()
+  // Picker drafts are keyed by node and locator field so unfinished selections
+  // survive switching between nodes without changing workflow arguments.
+  const [pickerDrafts, setPickerDrafts] = useState<Record<string, PickerDraft>>({})
 
   const readOnly = Boolean(version?.is_published)
   const canOpenRuns = Boolean(workflowId && version && canRun)
@@ -357,7 +360,7 @@ export default function App() {
           </div>
         )}
       </section>
-      <Inspector node={selected} stepType={selectedType} readOnly={readOnly} onChange={updateSelected} picker={workflowId ? { workflowId, clientId: pickerClientId, agentConnected: pickerAgentConnected, event: pickerEvent } : undefined}/>
+      <Inspector node={selected} stepType={selectedType} readOnly={readOnly} onChange={updateSelected} picker={workflowId ? { workflowId, clientId: pickerClientId, agentConnected: pickerAgentConnected, event: pickerEvent, drafts: pickerDrafts, onDraftChange: (key, draft) => setPickerDrafts((current) => ({ ...current, [key]: draft })) } : undefined}/>
     </div>
     <section className={`bottom-panels ${jsonOpen ? 'is-expanded' : ''}`}><details open={jsonOpen} onToggle={(event) => setJsonOpen(event.currentTarget.open)}><summary>Definition JSON preview / validated import</summary><div className="json-panel-content"><textarea aria-label="Definition JSON" value={jsonImport || JSON.stringify(definition, null, 2)} onChange={(e) => setJsonImport(e.target.value)}/><button disabled={readOnly} onClick={importDefinition}>Import and validate</button></div></details></section>
   </main>

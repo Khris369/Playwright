@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import secrets
+import asyncio
 from typing import Any
 
 import websockets
@@ -22,33 +23,55 @@ class AgentConnection:
         await self.socket.send(json.dumps({"version": 1, "type": event_type, "session_id": session_id, "payload": payload}))
 
     async def run(self) -> None:
+        explicit_token = self.token is not None
         stored_token = load_device_token() if self.token is None else None
         token = self.token or stored_token
-        if token:
+        retry_delay = 1.0
+        while True:
+            if token:
+                try:
+                    await self._run_authenticated(token)
+                    retry_delay = 1.0
+                except InvalidStatus:
+                    if explicit_token:
+                        raise
+                    clear_device_token()
+                    stored_token = None
+                    token = None
+                    print("Picker device token was rejected; starting a new pairing.")
+                    continue
+                except (ConnectionClosed, OSError) as exc:
+                    print(f"Picker connection lost ({type(exc).__name__}); retrying in {retry_delay:g}s.")
+                    await asyncio.sleep(retry_delay)
+                    retry_delay = min(retry_delay * 2, 30.0)
+                    continue
+            token = await self._pair_with_retry()
+            retry_delay = 1.0
+
+    async def _pair_with_retry(self) -> str:
+        """Pair until FastAPI is reachable, without requiring a new process."""
+        code_override = self.pairing_code
+        while True:
+            raw_code = secrets.token_hex(4).upper()
+            code = code_override or f"{raw_code[:4]}-{raw_code[4:]}"
+            code_override = None
+            print(f"Workflow Picker pairing code: {code}")
+            print("Enter this code in the authenticated workflow editor within 5 minutes.")
+            uri = f"{self.server}/editor-picker/pair?code={code}"
             try:
-                await self._run_authenticated(token)
-                return
-            except (ConnectionClosed, InvalidStatus):
-                if stored_token is None:
-                    raise
-                clear_device_token()
-                print("Stored picker device token was rejected; starting a new pairing.")
-        raw_code = secrets.token_hex(4).upper()
-        code = self.pairing_code or f"{raw_code[:4]}-{raw_code[4:]}"
-        print(f"Workflow Picker pairing code: {code}")
-        print("Enter this code in the authenticated workflow editor within 5 minutes.")
-        uri = f"{self.server}/editor-picker/pair?code={code}"
-        async with websockets.connect(uri, max_size=64 * 1024) as socket:
-            async for raw in socket:
-                message = json.loads(raw)
-                if message.get("type") == "pairing.approved":
-                    token = str(message.get("payload", {}).get("device_token", ""))
-                    if not token:
-                        raise ValueError("Pairing response did not contain a device token")
-                    save_device_token(token)
-                    self.token = token
-                    break
-        await self._run_authenticated(token)
+                async with websockets.connect(uri, max_size=64 * 1024) as socket:
+                    async for raw in socket:
+                        message = json.loads(raw)
+                        if message.get("type") == "pairing.approved":
+                            token = str(message.get("payload", {}).get("device_token", ""))
+                            if not token:
+                                raise ValueError("Pairing response did not contain a device token")
+                            save_device_token(token)
+                            self.token = token
+                            return token
+            except (ConnectionClosed, OSError):
+                print("Picker server unavailable; retrying pairing in 2s.")
+                await asyncio.sleep(2)
 
     async def _run_authenticated(self, token: str) -> None:
         uri = f"{self.server}/editor-picker/agent?device_token={token}"
@@ -59,9 +82,9 @@ class AgentConnection:
                 async for raw in socket:
                     await self.handle(json.loads(raw))
             except ConnectionClosed:
-                # Normal server/browser shutdown may not include a close
-                # frame; cleanup below remains the source of truth.
-                pass
+                # Let the outer loop apply bounded reconnect backoff. Cleanup
+                # below still runs before the exception is propagated.
+                raise
             finally:
                 for session in list(self.sessions.values()):
                     await session.close()
