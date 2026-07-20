@@ -14,29 +14,58 @@ class PermissionRepository:
             return cursor.fetchone() is not None
 
     @staticmethod
+    def list_workflow_access(user_id: int, is_admin: bool = False) -> list[dict]:
+        with get_db_cursor() as (_, cursor):
+            if is_admin:
+                cursor.execute("SELECT id AS workflow_id FROM workflows WHERE status = 'active' ORDER BY id")
+                return [{"workflow_id": int(row["workflow_id"]), "permissions": ["workflow.view", "workflow.edit", "workflow.run"]} for row in cursor.fetchall()]
+            cursor.execute(
+                """
+                SELECT wm.workflow_id,
+                       GROUP_CONCAT(wmp.permission_key ORDER BY wmp.permission_key SEPARATOR ',') AS permission_keys
+                FROM workflow_members wm
+                LEFT JOIN workflow_member_permissions wmp
+                  ON wmp.workflow_id = wm.workflow_id AND wmp.user_id = wm.user_id
+                JOIN workflows w ON w.id = wm.workflow_id AND w.status = 'active'
+                WHERE wm.user_id = %s
+                GROUP BY wm.workflow_id
+                """,
+                (user_id,),
+            )
+            rows = list(cursor.fetchall())
+        return [{"workflow_id": int(row["workflow_id"]), "permissions": [value for value in str(row.get("permission_keys") or "").split(",") if value]} for row in rows]
+
+    @staticmethod
     def list_workflow_members(workflow_id: int) -> list[dict]:
         with get_db_cursor() as (_, cursor):
             cursor.execute(
                 """
-                SELECT wm.user_id, u.username, u.display_name, wm.access_level
+                SELECT wm.user_id, u.username, u.display_name,
+                       GROUP_CONCAT(wmp.permission_key ORDER BY wmp.permission_key SEPARATOR ',') AS permission_keys
                 FROM workflow_members wm
                 JOIN users u ON u.id = wm.user_id
+                LEFT JOIN workflow_member_permissions wmp
+                  ON wmp.workflow_id = wm.workflow_id AND wmp.user_id = wm.user_id
                 WHERE wm.workflow_id = %s
+                GROUP BY wm.user_id, u.username, u.display_name
                 ORDER BY u.display_name, u.username
                 """,
                 (workflow_id,),
             )
-            return list(cursor.fetchall())
+            rows = list(cursor.fetchall())
+        for row in rows:
+            row["permissions"] = [value for value in str(row.pop("permission_keys") or "").split(",") if value]
+        return rows
 
     @staticmethod
     def set_workflow_members(workflow_id: int, members: list[dict]) -> list[dict]:
-        allowed = {"viewer", "editor", "runner"}
-        normalized: dict[int, str] = {}
+        allowed = {"workflow.view", "workflow.edit", "workflow.run"}
+        normalized: dict[int, list[str]] = {}
         for member in members:
-            access_level = str(member["access_level"]).strip().lower()
-            if access_level not in allowed:
-                raise ValueError("invalid_access_level")
-            normalized[int(member["user_id"])] = access_level
+            permissions = sorted({str(value).strip().lower() for value in member["permissions"]})
+            if not permissions or not set(permissions).issubset(allowed):
+                raise ValueError("invalid_permissions")
+            normalized[int(member["user_id"])] = permissions
         with get_db_cursor() as (_, cursor):
             cursor.execute("SELECT id FROM workflows WHERE id = %s", (workflow_id,))
             if cursor.fetchone() is None:
@@ -53,8 +82,12 @@ class PermissionRepository:
             cursor.execute("DELETE FROM workflow_members WHERE workflow_id = %s", (workflow_id,))
             if normalized:
                 cursor.executemany(
-                    "INSERT INTO workflow_members (workflow_id, user_id, access_level) VALUES (%s, %s, %s)",
-                    [(workflow_id, user_id, access) for user_id, access in normalized.items()],
+                    "INSERT INTO workflow_members (workflow_id, user_id) VALUES (%s, %s)",
+                    [(workflow_id, user_id) for user_id in normalized],
+                )
+                cursor.executemany(
+                    "INSERT INTO workflow_member_permissions (workflow_id, user_id, permission_key) VALUES (%s, %s, %s)",
+                    [(workflow_id, user_id, permission) for user_id, permissions in normalized.items() for permission in permissions],
                 )
         return PermissionRepository.list_workflow_members(workflow_id)
 
@@ -77,27 +110,22 @@ class PermissionRepository:
         with get_db_cursor() as (_, cursor):
             cursor.execute(
                 """
-                SELECT w.owner_user_id, wm.access_level
+                SELECT w.owner_user_id,
+                       EXISTS(
+                         SELECT 1 FROM workflow_member_permissions wmp
+                         WHERE wmp.workflow_id = w.id AND wmp.user_id = %s AND wmp.permission_key = %s
+                       ) AS has_permission
                 FROM workflows w
-                LEFT JOIN workflow_members wm
-                  ON wm.workflow_id = w.id AND wm.user_id = %s
                 WHERE w.id = %s
                 """,
-                (user_id, workflow_id),
+                (user_id, permission, workflow_id),
             )
             row = cursor.fetchone()
         if row is None:
             return False
         if int(row.get("owner_user_id") or 0) == user_id:
             return True
-        access = str(row.get("access_level") or "").lower()
-        if permission == "workflow.view":
-            return access in {"viewer", "editor", "runner", "admin"}
-        if permission == "workflow.edit":
-            return access in {"editor", "admin"}
-        if permission == "workflow.run":
-            return access in {"runner", "editor", "admin"}
-        return False
+        return bool(row.get("has_permission"))
 
     @staticmethod
     def resource_workflow_id(resource_type: str, resource_id: int) -> int | None:

@@ -222,11 +222,21 @@ CREATE TABLE IF NOT EXISTS `role_permissions` (
 CREATE TABLE IF NOT EXISTS `workflow_members` (
   `workflow_id` INT NOT NULL,
   `user_id` INT NOT NULL,
-  `access_level` VARCHAR(30) NOT NULL DEFAULT 'viewer',
   `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`workflow_id`, `user_id`),
   CONSTRAINT `fk_workflow_members_workflow` FOREIGN KEY (`workflow_id`) REFERENCES `workflows` (`id`) ON DELETE CASCADE,
   CONSTRAINT `fk_workflow_members_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `workflow_member_permissions` (
+  `workflow_id` INT NOT NULL,
+  `user_id` INT NOT NULL,
+  `permission_key` VARCHAR(100) NOT NULL,
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`workflow_id`, `user_id`, `permission_key`),
+  KEY `idx_workflow_member_permissions_user` (`user_id`, `workflow_id`),
+  CONSTRAINT `fk_workflow_member_permissions_member`
+    FOREIGN KEY (`workflow_id`, `user_id`) REFERENCES `workflow_members` (`workflow_id`, `user_id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 INSERT INTO `roles` (`name`, `description`) VALUES

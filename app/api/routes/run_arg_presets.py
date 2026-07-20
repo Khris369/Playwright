@@ -8,7 +8,7 @@ from app.schemas.run_arg_preset import (
     RunArgPresetUpdate,
 )
 from app.services.run_arg_preset_repository import RunArgPresetRepository
-from app.core.auth import require_permission, require_workflow_access
+from app.core.auth import current_user, require_permission, require_workflow_access
 from app.services.permission_repository import PermissionRepository
 
 router = APIRouter(prefix="/run-arg-presets", tags=["run-arg-presets"])
@@ -27,7 +27,7 @@ def create_run_arg_preset(payload: RunArgPresetCreate, user: dict = Depends(requ
 def list_run_arg_presets(
     workflow_id: int | None = Query(default=None),
     workflow_version_id: int | None = Query(default=None),
-    user: dict = Depends(require_permission("workflow.view")),
+    user: dict = Depends(current_user),
 ) -> list[RunArgPresetResponse]:
     rows = RunArgPresetRepository.list_presets(
         workflow_id=workflow_id,

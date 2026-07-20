@@ -3,7 +3,7 @@ from pydantic import BaseModel, Field
 
 class WorkflowMemberAssignment(BaseModel):
     user_id: int = Field(ge=1)
-    access_level: str = Field(min_length=1, max_length=30)
+    permissions: list[str] = Field(min_length=1, max_length=3)
 
 
 class WorkflowMembersUpdate(BaseModel):
@@ -14,4 +14,4 @@ class WorkflowMemberResponse(BaseModel):
     user_id: int
     username: str
     display_name: str
-    access_level: str
+    permissions: list[str]

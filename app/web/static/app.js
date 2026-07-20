@@ -568,7 +568,7 @@ function renderStepBuilder() {
 }
 
   function setActiveTab(tabName) {
-    if (tabName === "runs" && currentUser && !(currentUser.permissions || []).includes("workflow.run") && !(currentUser.roles || []).includes("admin")) {
+    if (tabName === "runs" && currentUser && !hasRunAccess()) {
       tabName = "workflows";
     }
     document.querySelectorAll(".tab").forEach((tab) => {
@@ -770,6 +770,14 @@ function buildRunInputsPayload() {
   return inputs;
 }
 
+function hasRunAccess() {
+  return Boolean(
+    currentUser?.roles?.includes("admin") ||
+    currentUser?.permissions?.includes("workflow.run") ||
+    currentWorkflows.some((workflow) => (workflow.access_permissions || []).includes("workflow.run")),
+  );
+}
+
 function runPresetOption(preset) {
   const scope =
     preset.workflow_version_id
@@ -956,7 +964,7 @@ async function loadCurrentUser() {
     }
     const runsTab = document.querySelector('.tab[data-tab="runs"]');
     if (runsTab) {
-      const canRun = (user?.permissions || []).includes("workflow.run") || (user?.roles || []).includes("admin");
+      const canRun = hasRunAccess();
       runsTab.hidden = !canRun;
       if (!canRun && runsTab.classList.contains("is-active")) {
         setActiveTab("workflows");
@@ -1225,18 +1233,29 @@ async function shareWorkflowById(workflowId) {
     select.appendChild(option);
   });
   dialog._directory = users || [];
-  dialog._members = (members || []).map((member) => ({ user_id: Number(member.user_id), access_level: member.access_level }));
+  dialog._members = (members || []).map((member) => ({ user_id: Number(member.user_id), permissions: member.permissions || [] }));
+  setSharePermissionChecks(dialog._members.find((member) => member.user_id === Number(select.value))?.permissions || ["workflow.view"]);
   renderShareMembers(dialog);
   if (typeof dialog.showModal === "function") dialog.showModal();
 }
+
+on("workflow-share-user", "change", () => {
+  const dialog = $("workflow-share-dialog");
+  const userId = Number($("workflow-share-user").value);
+  setSharePermissionChecks(dialog?._members?.find((member) => member.user_id === userId)?.permissions || ["workflow.view"]);
+});
 
 on("workflow-share-add", "click", () => {
   const dialog = $("workflow-share-dialog");
   const userId = Number($("workflow-share-user").value);
   if (!dialog || !userId) return;
-  const accessLevel = $("workflow-share-access").value;
+  const permissions = [...document.querySelectorAll("#workflow-share-dialog input[type=checkbox][value^='workflow.']:checked")].map((input) => input.value);
+  if (!permissions.length) {
+    toast("Select at least one permission", true);
+    return;
+  }
   dialog._members = (dialog._members || []).filter((member) => member.user_id !== userId);
-  dialog._members.push({ user_id: userId, access_level: accessLevel });
+  dialog._members.push({ user_id: userId, permissions });
   renderShareMembers(dialog);
 });
 
@@ -1272,7 +1291,7 @@ function renderShareMembers(dialog) {
     const row = document.createElement("div");
     row.className = "workflow-share-member-row";
     const label = document.createElement("span");
-    label.textContent = `${user?.display_name || `User #${member.user_id}`} — ${member.access_level}`;
+    label.textContent = (user?.display_name || ("User #" + member.user_id)) + " — " + member.permissions.map((permission) => permission.replace("workflow.", "")).join(", ");
     const remove = document.createElement("button");
     remove.type = "button";
     remove.className = "btn-danger-outline btn-sm";
@@ -1280,6 +1299,13 @@ function renderShareMembers(dialog) {
     remove.addEventListener("click", () => { dialog._members = dialog._members.filter((item) => item.user_id !== member.user_id); renderShareMembers(dialog); });
     row.append(label, remove);
     list.appendChild(row);
+  });
+}
+
+function setSharePermissionChecks(permissions) {
+  const selected = new Set(permissions);
+  document.querySelectorAll("#workflow-share-dialog input[type=checkbox][value^='workflow.']").forEach((input) => {
+    input.checked = selected.has(input.value);
   });
 }
 
@@ -1291,8 +1317,10 @@ function templateRow(tpl) {
 }
 
 async function refreshWorkflows() {
-  const items = await api("/workflows?active_only=true");
+  const [items, access] = await Promise.all([api("/workflows?active_only=true"), api("/workflows/access")]);
   currentWorkflows = Array.isArray(items) ? items : [];
+  const accessByWorkflow = new Map((access || []).map((item) => [Number(item.workflow_id), item.permissions || []]));
+  currentWorkflows = currentWorkflows.map((workflow) => ({ ...workflow, access_permissions: accessByWorkflow.get(Number(workflow.id)) || [] }));
   renderWorkflowList();
 
   const runWorkflowSelect = $("run-workflow-id");
@@ -1313,6 +1341,8 @@ async function refreshWorkflows() {
   }
 
   updateRunControlsState();
+  const runsTab = document.querySelector('.tab[data-tab="runs"]');
+  if (runsTab) runsTab.hidden = !hasRunAccess();
 
   const selectedId = Number(($("selected-workflow-id") || {}).value || 0);
   if (selectedId && !currentWorkflows.some((item) => Number(item.id) === selectedId)) {

@@ -59,18 +59,17 @@
           </div>
           <button class="btn-secondary btn-sm" value="cancel" type="submit">Close</button>
         </div>
-        <div class="grid2">
-          <label>User
-            <select id="workflow-share-user"></select>
-          </label>
-          <label>Access
-            <select id="workflow-share-access">
-              <option value="viewer">Viewer</option>
-              <option value="editor">Editor</option>
-              <option value="runner">Runner</option>
-            </select>
-          </label>
-        </div>
+          <div class="grid2">
+            <label>User
+              <select id="workflow-share-user"></select>
+            </label>
+            <fieldset class="workflow-share-permissions">
+              <legend>Permissions</legend>
+              <label><input type="checkbox" value="workflow.view" checked> View</label>
+              <label><input type="checkbox" value="workflow.edit"> Edit</label>
+              <label><input type="checkbox" value="workflow.run"> Run</label>
+            </fieldset>
+          </div>
         <button id="workflow-share-add" class="btn-secondary" value="" type="button">Add or update member</button>
         <div id="workflow-share-members" class="workflow-share-members"></div>
         <div class="actions-centered">

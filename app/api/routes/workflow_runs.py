@@ -22,7 +22,7 @@ from app.services.workflow_run_control import WorkflowRunControl
 from app.services.workflow_run_repository import WorkflowRunRepository
 from app.services.workflow_run_dispatcher import WorkflowRunDispatcher
 from app.services.workflow_runner import WorkflowRunnerService
-from app.core.auth import require_permission, require_workflow_access
+from app.core.auth import current_user, require_permission, require_workflow_access
 from app.services.permission_repository import PermissionRepository
 
 # Coordinates run APIs while keeping execution, persistence, and artifact path
@@ -58,7 +58,7 @@ def _open_trace_viewer(trace_path: Path) -> None:
 def list_workflow_runs(
     workflow_version_id: int | None = Query(default=None, ge=1),
     limit: int = Query(default=20, ge=1, le=100),
-    user: dict = Depends(require_permission("workflow.view")),
+    user: dict = Depends(current_user),
 ) -> list[WorkflowRunResponse]:
     """List recent runs, optionally filtered to a workflow version."""
     return [

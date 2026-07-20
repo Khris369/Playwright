@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from app.core.auth import require_permission, require_workflow_access, require_workflow_owner
+from app.core.auth import current_user, require_permission, require_workflow_access, require_workflow_owner
 from app.schemas.workflow_member import WorkflowMemberResponse, WorkflowMembersUpdate
 from app.services.permission_repository import PermissionRepository
 from app.schemas.workflow import (
@@ -27,6 +27,11 @@ def list_workflow_members(
     return [WorkflowMemberResponse(**row) for row in PermissionRepository.list_workflow_members(workflow_id)]
 
 
+@router.get("/access", response_model=list[dict])
+def list_workflow_access(user: dict = Depends(current_user)) -> list[dict]:
+    return PermissionRepository.list_workflow_access(int(user["id"]), "admin" in user.get("roles", []))
+
+
 @router.put("/{workflow_id}/members", response_model=list[WorkflowMemberResponse])
 def update_workflow_members(
     workflow_id: int,
@@ -41,7 +46,7 @@ def update_workflow_members(
         errors = {
             "workflow_not_found": (404, "Workflow not found"),
             "user_not_found": (422, "One or more users were not found or are inactive"),
-            "invalid_access_level": (422, "Access level must be viewer, editor, or runner"),
+            "invalid_permissions": (422, "Permissions must be workflow.view, workflow.edit, or workflow.run"),
         }
         status_code, detail = errors.get(str(exc), (422, "Invalid workflow members"))
         raise HTTPException(status_code=status_code, detail=detail) from exc
@@ -58,7 +63,7 @@ def create_workflow(
 
 
 @router.get("", response_model=list[WorkflowResponse])
-def list_workflows(active_only: bool = Query(default=False), user: dict = Depends(require_permission("workflow.view"))) -> list[WorkflowResponse]:
+def list_workflows(active_only: bool = Query(default=False), user: dict = Depends(current_user)) -> list[WorkflowResponse]:
     rows = WorkflowRepository.list_workflows(
         active_only=active_only,
         user_id=int(user["id"]),

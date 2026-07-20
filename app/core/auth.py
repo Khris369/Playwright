@@ -42,8 +42,11 @@ def require_permission(permission: str):
 
 def require_workflow_access(permission: str):
     def dependency(request: Request) -> dict:
-        user = require_permission(permission)(request)
+        user = current_user(request)
         if "admin" in user.get("roles", []):
+            return user
+
+        if permission in user.get("permissions", []):
             return user
 
         params = request.path_params

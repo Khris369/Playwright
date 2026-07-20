@@ -31,6 +31,7 @@ For databases that were initialized before the latest consolidated schema, apply
 4. `010_workflow_last_updated.sql`
 5. `011_rbac.sql`
 6. `012_remove_legacy_user_role.sql`
+7. `013_workflow_member_permissions.sql`
 
 These files are retained only for existing installations.
 
