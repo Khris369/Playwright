@@ -6,6 +6,7 @@ from typing import Any
 
 SENSITIVE_ATTRIBUTE = re.compile(r"pass|token|secret|cookie|auth|value", re.I)
 VOLATILE = re.compile(r"^(css-|ng-|react|vue|ember|data-react|data-v-|_[a-z0-9]{6,})", re.I)
+SAFE_CLASS = re.compile(r"^[A-Za-z_][A-Za-z0-9_-]*$")
 
 
 @dataclass(frozen=True)
@@ -52,6 +53,9 @@ def generate_candidates(metadata: dict[str, Any]) -> list[Candidate]:
     stable_id = attrs.get("id")
     if stable_id and not VOLATILE.search(stable_id):
         candidates.append(Candidate({"strategy": "css", "selector": f"#{stable_id}", "exact": True, "match": "strict"}, 86, "stable id"))
+    classes = [token for token in str(attrs.get("class", "")).split() if SAFE_CLASS.fullmatch(token) and not VOLATILE.search(token)]
+    if classes:
+        candidates.append(Candidate({"strategy": "css", "selector": tag + "".join(f".{token}" for token in classes), "exact": True, "match": "strict"}, 78, "class"))
     for key in ("name", "aria-label", "title"):
         if attrs.get(key) and not VOLATILE.search(attrs[key]):
             candidates.append(Candidate({"strategy": "css", "selector": f"{tag}{_css_attr(key, attrs[key])}", "exact": True, "match": "strict"}, 82, key))

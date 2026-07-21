@@ -5,9 +5,9 @@ import {
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { api, ApiError } from './api'
-import { arrange, blankGraph, fromDefinition, isValidConnection, linearOrder, removeNode, rewireOrder, resolveHandleSide, toDefinition, uid } from './graph'
+import { arrange, blankGraph, fromDefinition, isValidConnection, linearOrder, removeNode, removeNodes, replacementEdgesForNode, rewireOrder, resolveHandleSide, toDefinition, uid } from './graph'
 import { spawnNodePosition } from './spawn'
-import { Inspector, type PickerDraft } from './Inspector'
+import { Inspector, type PickerDraft, type PickerSession } from './Inspector'
 import { Palette } from './Palette'
 import { dashboardRunsUrl } from './navigation'
 import type { GraphEdge, GraphNode, StepType, ValidationResult, Version } from './types'
@@ -15,6 +15,7 @@ import { WorkflowNode } from './WorkflowNode'
 import { AssistantPanel } from './AssistantPanel'
 
 type Snapshot = { nodes: GraphNode[]; edges: GraphEdge[] }
+type ReplacementSlot = { source: string; target: string; incomingData: GraphEdge['data']; outgoingData: GraphEdge['data'] }
 const nodeTypes = { workflow: WorkflowNode }
 
 function isTextEditingTarget(target: EventTarget | null) {
@@ -75,6 +76,31 @@ export function AgentPairingControl({ connected, info }: { connected: boolean; i
   </div>
 }
 
+function PickerBrowserControl({ workflowId, nodeId, clientId, connected, disabled, session, onSessionChange }: { workflowId: number; nodeId?: string; clientId: string; connected: boolean; disabled: boolean; session?: PickerSession; onSessionChange: (session?: PickerSession) => void }) {
+  const [requestedUrl, setRequestedUrl] = useState('')
+  const [status, setStatus] = useState('No browser open')
+  const open = async () => {
+    if (!connected || !workflowId) return
+    try {
+      setStatus('Opening browser')
+      const created = await api<{ session_id: string; status: string }>('/editor-picker/sessions', {
+        method: 'POST',
+        body: JSON.stringify({ workflow_id: workflowId, node_id: nodeId || 'picker-browser', client_id: clientId, ...(requestedUrl.trim() ? { requested_url: requestedUrl.trim() } : {}) }),
+      })
+      onSessionChange({ sessionId: created.session_id, status: created.status === 'waiting_for_agent' ? 'Waiting for agent' : 'Opening browser', requestedUrl })
+    } catch (error) { setStatus((error as Error).message) }
+  }
+  const close = async () => {
+    if (!session) return
+    try { await api(`/editor-picker/sessions/${session.sessionId}/cancel`, { method: 'POST' }); onSessionChange(); setStatus('Browser closed') }
+    catch (error) { setStatus((error as Error).message) }
+  }
+  useEffect(() => { if (session) setStatus(session.status) }, [session?.status])
+  return <div className="picker-browser-control" aria-label="Shared picker browser">
+    {session ? <><span className="picker-browser-status">Picker browser: {session.status}</span><button type="button" disabled={disabled} onClick={() => void close()}>Close browser</button></> : <><label className="picker-browser-url">Picker URL<input disabled={disabled || !connected} value={requestedUrl} placeholder="https://example.com" onChange={(event) => setRequestedUrl(event.target.value)} /></label><button type="button" disabled={disabled || !connected} onClick={() => void open()}>Open picker browser</button><span className={connected ? 'valid' : 'error'}>{status}</span></>}
+  </div>
+}
+
 export default function App() {
   const workflowId = Number(new URLSearchParams(location.search).get('workflow_id'))
   const initial = useMemo(blankGraph, [])
@@ -90,6 +116,7 @@ export default function App() {
   const [message, setMessage] = useState('Loading…')
   const [past, setPast] = useState<Snapshot[]>([])
   const [future, setFuture] = useState<Snapshot[]>([])
+  const [replacementSlot, setReplacementSlot] = useState<ReplacementSlot>()
   const [jsonImport, setJsonImport] = useState('')
   const [assistantOpen, setAssistantOpen] = useState(false)
   const [jsonOpen, setJsonOpen] = useState(false)
@@ -106,6 +133,26 @@ export default function App() {
   // Picker drafts are keyed by node and locator field so unfinished selections
   // survive switching between nodes without changing workflow arguments.
   const [pickerDrafts, setPickerDrafts] = useState<Record<string, PickerDraft>>({})
+  const [pickerSession, setPickerSession] = useState<PickerSession>()
+  useEffect(() => {
+    if (!pickerSession || pickerEvent?.session_id !== pickerSession.sessionId) return
+    if (pickerEvent.type === 'picker.error' || pickerEvent.type === 'session.closed') {
+      setPickerSession(undefined)
+      return
+    }
+    const statusByEvent: Record<string, string> = {
+      'picker.session.accepted': 'Opening browser',
+      'browser.opened': 'Browser ready',
+      'picker.inspect.started': 'Select an element',
+      'picker.inspect.cancelled': 'Browser ready',
+      'picker.element.selected': 'Element selected',
+    }
+    const backendState = String(pickerEvent.payload?.status ?? pickerSession.status)
+    const status = pickerEvent.type === 'picker.session.updated'
+      ? ({ browser_ready: 'Browser ready', waiting_for_agent: 'Waiting for agent', browser_starting: 'Opening browser' }[backendState] ?? backendState.replaceAll('_', ' '))
+      : statusByEvent[pickerEvent.type]
+    if (status && status !== pickerSession.status) setPickerSession((current) => current && current.sessionId === pickerSession.sessionId ? { ...current, status } : current)
+  }, [pickerEvent, pickerSession])
 
   const readOnly = Boolean(version?.is_published)
   const canOpenRuns = Boolean(workflowId && version && canRun)
@@ -201,9 +248,16 @@ export default function App() {
 
   const deleteNode = useCallback((nodeId: string) => {
     if (readOnly) return
+    const replacement = replacementEdgesForNode(nodes, edges, nodeId)
     const next = removeNode(nodes, edges, nodeId)
     if (next.nodes === nodes && next.edges === edges) return
     commit(next.nodes, next.edges)
+    setReplacementSlot(replacement && {
+      source: replacement.incoming.source,
+      target: replacement.outgoing.target,
+      incomingData: replacement.incoming.data,
+      outgoingData: replacement.outgoing.data,
+    })
     if (selectedId === nodeId) setSelectedId(undefined)
     closeContextMenu()
   }, [closeContextMenu, commit, edges, nodes, readOnly, selectedId])
@@ -266,8 +320,27 @@ export default function App() {
 
   const onNodesChange = (changes: NodeChange<GraphNode>[]) => {
     if (readOnly) return
-    if (changes.some((change) => change.type === 'remove')) checkpoint()
-    setNodes((current) => applyNodeChanges(changes.filter((change) => change.type !== 'remove' || current.find((node) => node.id === change.id)?.data.kind !== 'start'), current))
+    const removeIds = changes.filter((change) => change.type === 'remove').map((change) => change.id)
+    const removed = removeNodes(nodes, edges, removeIds)
+    const deletedNodeIds = new Set(nodes.filter((node) => !removed.nodes.some((remaining) => remaining.id === node.id)).map((node) => node.id))
+
+    if (deletedNodeIds.size) {
+      // React Flow reports keyboard deletion through onNodesChange. Clean up all
+      // incident edges here as well, otherwise dangling edges corrupt handle state.
+      checkpoint()
+      setEdges(removed.edges)
+      const replacement = removeIds.length === 1 ? replacementEdgesForNode(nodes, edges, removeIds[0]) : undefined
+      setReplacementSlot(replacement && {
+        source: replacement.incoming.source,
+        target: replacement.outgoing.target,
+        incomingData: replacement.incoming.data,
+        outgoingData: replacement.outgoing.data,
+      })
+      if (selectedId && deletedNodeIds.has(selectedId)) setSelectedId(undefined)
+    }
+
+    const nonRemovalChanges = changes.filter((change) => change.type !== 'remove')
+    setNodes(applyNodeChanges(nonRemovalChanges, removed.nodes))
     if (changes.some((change) => change.type !== 'select' && change.type !== 'dimensions')) setDirty(true)
   }
   const onEdgesChange = (changes: EdgeChange<GraphEdge>[]) => { if (!readOnly) { if (changes.some((c) => c.type === 'remove')) checkpoint(); setEdges((current) => applyEdgeChanges(changes, current)); setDirty(true) } }
@@ -289,9 +362,18 @@ export default function App() {
 
   const addStep = (step: StepType) => {
     const executable = nodes.filter((node) => node.data.kind !== 'comment')
-    const node: GraphNode = { id: uid(), type: 'workflow', position: spawnNodePosition(nodes, getCanvasCenter()), data: { kind: 'step', step_type: step.key, args: structuredClone(step.default_args), title: step.name } }
+    const slotSource = replacementSlot && nodes.find((node) => node.id === replacementSlot.source)
+    const slotTarget = replacementSlot && nodes.find((node) => node.id === replacementSlot.target)
+    const canReplace = Boolean(replacementSlot && slotSource && slotTarget && !edges.some((edge) => edge.source === replacementSlot.source || edge.target === replacementSlot.target))
+    const position = canReplace && slotSource && slotTarget
+      ? { x: (slotSource.position.x + slotTarget.position.x) / 2, y: (slotSource.position.y + slotTarget.position.y) / 2 }
+      : spawnNodePosition(nodes, getCanvasCenter())
+    const node: GraphNode = { id: uid(), type: 'workflow', position, data: { kind: 'step', step_type: step.key, args: structuredClone(step.default_args), title: step.name } }
     const targets = new Set(edges.map((edge) => edge.target)); const tail = executable.find((item) => !edges.some((edge) => edge.source === item.id) && targets.has(item.id)) ?? executable.at(-1)
-    commit([...nodes, node], tail ? [...edges, { id: uid(), source: tail.id, target: node.id }] : edges); setSelectedId(node.id)
+    const nextEdges = canReplace && replacementSlot
+      ? [...edges, { id: uid(), source: replacementSlot.source, target: node.id, data: replacementSlot.incomingData }, { id: uid(), source: node.id, target: replacementSlot.target, data: replacementSlot.outgoingData }]
+      : tail ? [...edges, { id: uid(), source: tail.id, target: node.id }] : edges
+    commit([...nodes, node], nextEdges); setReplacementSlot(undefined); setSelectedId(node.id)
   }
   const addComment = () => commit([...nodes, { id: uid(), type: 'workflow', position: { x: 80, y: 360 }, data: { kind: 'comment', text: 'Comment' } }])
   const addControl = (kind: 'if' | 'loop') => {
@@ -366,7 +448,7 @@ export default function App() {
   return <main className="app-shell">
     <header><a href="/ui">Dashboard</a><h1>Workflow editor</h1><nav className="editor-tabs" aria-label="Editor sections"><span className="editor-tab is-active" aria-current="page">Editor</span><button className="editor-tab" type="button" hidden={!canRun} disabled={!canOpenRuns} title={canOpenRuns ? 'Open the dashboard Runs tab for the current workflow and version.' : 'Load a workflow and version first.'} onClick={() => { window.location.href = runsUrl }}>Runs</button></nav><button type="button" aria-expanded={assistantOpen} onClick={() => setAssistantOpen((open) => !open)}>Assistant</button><select value={version?.id ?? ''} onChange={(e) => { const next = versions.find((item) => item.id === Number(e.target.value)); if (next && (!dirty || confirm('Discard unsaved changes?'))) loadVersion(next) }}>{versions.map((item) => <option value={item.id} key={item.id}>v{item.version_number}{item.is_published ? ' · published' : ' · draft'}</option>)}</select><button onClick={createVersion}>New version</button><button onClick={togglePublished} disabled={!version || (!version.is_published && !validation.valid)}>{version?.is_published ? 'Unpublish' : 'Publish'}</button><button onClick={save} disabled={readOnly || !dirty || !validation.valid}>Save</button><span>{message}</span></header>
     {assistantOpen && <div className="assistant-drawer"><AssistantPanel workflowId={workflowId || undefined} versionId={version?.id} definition={definition} stepTypes={stepTypes} disabled={readOnly} onApply={applyAssistantSteps} onClose={() => setAssistantOpen(false)} /></div>}
-    <div className="toolbar"><button disabled={!past.length || readOnly} onClick={undo}>Undo</button><button disabled={!future.length || readOnly} onClick={redo}>Redo</button><button disabled={readOnly} onClick={() => commit(arrange(nodes, edges))}>Arrange</button><button disabled={!selected || readOnly} onClick={duplicate}>Duplicate</button><span className={validation.valid ? 'valid' : 'error'}>{validation.valid ? `${validation.compiled_order.length} steps · valid` : `${validation.errors.length} validation errors`}</span><AgentPairingControl connected={pickerAgentConnected} info={pickerAgentInfo}/></div>
+    <div className="toolbar"><button disabled={!past.length || readOnly} onClick={undo}>Undo</button><button disabled={!future.length || readOnly} onClick={redo}>Redo</button><button disabled={readOnly} onClick={() => commit(arrange(nodes, edges))}>Arrange</button><button disabled={!selected || readOnly} onClick={duplicate}>Duplicate</button><span className={validation.valid ? 'valid' : 'error'}>{validation.valid ? `${validation.compiled_order.length} steps · valid` : `${validation.errors.length} validation errors`}</span><AgentPairingControl connected={pickerAgentConnected} info={pickerAgentInfo}/>{workflowId > 0 && <PickerBrowserControl workflowId={workflowId} nodeId={selected?.id} clientId={pickerClientId} connected={pickerAgentConnected} disabled={readOnly} session={pickerSession} onSessionChange={setPickerSession}/>}</div>
     <div className="workspace">
       <Palette stepTypes={stepTypes} disabled={readOnly} onAdd={addStep} onControl={addControl} onComment={addComment}/>
       <section className="canvas" ref={reactFlowWrapper}>
@@ -414,7 +496,7 @@ export default function App() {
           </div>
         )}
       </section>
-      <Inspector node={selected} stepType={selectedType} readOnly={readOnly} onChange={updateSelected} picker={workflowId ? { workflowId, clientId: pickerClientId, agentConnected: pickerAgentConnected, event: pickerEvent, drafts: pickerDrafts, onDraftChange: (key, draft) => setPickerDrafts((current) => ({ ...current, [key]: draft })) } : undefined}/>
+      <Inspector node={selected} stepType={selectedType} readOnly={readOnly} onChange={updateSelected} picker={workflowId ? { workflowId, clientId: pickerClientId, agentConnected: pickerAgentConnected, event: pickerEvent, drafts: pickerDrafts, session: pickerSession, onSessionChange: setPickerSession, onDraftChange: (key, draft) => setPickerDrafts((current) => ({ ...current, [key]: draft })) } : undefined}/>
     </div>
     <section className={`bottom-panels ${jsonOpen ? 'is-expanded' : ''}`}><details open={jsonOpen} onToggle={(event) => setJsonOpen(event.currentTarget.open)}><summary>Definition JSON preview / validated import</summary><div className="json-panel-content"><textarea aria-label="Definition JSON" value={jsonImport || JSON.stringify(definition, null, 2)} onChange={(e) => setJsonImport(e.target.value)}/><button disabled={readOnly} onClick={importDefinition}>Import and validate</button></div></details></section>
   </main>

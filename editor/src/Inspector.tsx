@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { api } from './api'
 import type { GraphNode, HandleSide, StepType } from './types'
 
@@ -7,12 +7,16 @@ type Props = {
   stepType?: StepType
   readOnly: boolean
   onChange: (data: GraphNode['data']) => void
-  picker?: { workflowId: number; clientId: string; agentConnected: boolean; event?: PickerEvent; drafts?: Record<string, PickerDraft>; onDraftChange?: (key: string, draft: PickerDraft) => void }
+  picker?: InspectorPicker
 }
 
 type PickerEvent = { type: string; session_id?: string; payload?: Record<string, unknown> }
 type LocatorResult = { locator: LocatorValue; fallback_locators?: LocatorValue[]; element?: { tag_name?: string; text?: string | null; role?: string | null }; validation?: { match_count?: number; matches_selected_element?: boolean } }
-export type PickerDraft = { sessionId?: string; status?: string; requestedUrl: string; result?: LocatorResult }
+export type PickerDraft = { sessionId?: string; status?: string; notice?: string; requestedUrl: string; result?: LocatorResult }
+export type PickerSession = { sessionId: string; status: string; requestedUrl: string }
+type InspectorPicker = { workflowId: number; clientId: string; agentConnected: boolean; event?: PickerEvent; drafts?: Record<string, PickerDraft>; session?: PickerSession; onSessionChange?: (session?: PickerSession) => void; onDraftChange?: (key: string, draft: PickerDraft) => void }
+type FieldPicker = { nodeId: string; field: string; clientId: string; agentConnected: boolean; event?: PickerEvent; draft?: PickerDraft; session?: PickerSession; onSessionChange?: (session?: PickerSession) => void; onDraftChange: (draft: PickerDraft) => void; onAccept: (locator: LocatorValue) => void }
+type PickerFactory = (fieldPath: string, onAccept?: (locator: LocatorValue) => void) => FieldPicker | undefined
 
 function describeLocator(locator: LocatorValue): string {
   const strategy = String(locator.strategy ?? 'locator')
@@ -73,9 +77,11 @@ function supportsRunInput(stepType: StepType | undefined, path: string, widget: 
   return ['string', 'number', 'boolean'].includes(typeof value)
 }
 
-function getFieldLabel(path: string): string {
+function getFieldLabel(stepType: StepType | undefined, path: string): string {
   if (path === 'state') return 'Wait until'
-  return isSecondsTimeoutField(path) ? 'Seconds' : path
+  if (path === 'expected_state') return 'Expected state'
+  if (isSecondsTimeoutField(path)) return stepType?.key === 'verify_element' ? 'Verify within' : 'Seconds'
+  return path
 }
 
 function toDisplayNumber(path: string, value: unknown): string {
@@ -148,8 +154,10 @@ function ConnectionSideFields({ node, readOnly, onChange }: { node: GraphNode; r
   )
 }
 
-function LocatorTargetFields({ prefix = '', value, disabled, onChange }: { prefix?: string; value: LocatorValue; disabled: boolean; onChange: (value: LocatorValue) => void }) {
+function LocatorTargetFields({ prefix = '', value, disabled, onChange, picker }: { prefix?: string; value: LocatorValue; disabled: boolean; onChange: (value: LocatorValue) => void; picker?: FieldPicker }) {
   const strategy = LOCATOR_STRATEGIES.includes(value.strategy as LocatorStrategy) ? value.strategy as LocatorStrategy : 'label'
+  const pick = picker && prefix === '' ? { ...picker, disabled } : undefined
+  const field = (label: string, input: ReactNode) => <label>{label} <Help text={label === 'CSS selector' ? 'A CSS selector only; XPath and JavaScript are rejected.' : label === 'Accessible name' ? 'The accessible name used with the selected role.' : `The ${label.toLowerCase()} used to locate the element.`} /><div className="locator-value-row">{input}{pick && <PickerControls {...pick} />}</div></label>
   return (
     <div className="locator-target-fields">
       <label>
@@ -161,16 +169,16 @@ function LocatorTargetFields({ prefix = '', value, disabled, onChange }: { prefi
           <option value="css">CSS selector</option>
         </select>
       </label>
-      {strategy === 'label' && <label>{prefix}Label <Help text="The visible label associated with a form control." /><input disabled={disabled} value={String(value.label ?? '')} placeholder="Email address" onChange={(e) => onChange({ ...value, label: e.target.value })} /></label>}
-      {strategy === 'role' && <><label>{prefix}Role <Help text="The accessible role, such as button or textbox." /><input disabled={disabled} value={String(value.role ?? '')} placeholder="button" onChange={(e) => onChange({ ...value, role: e.target.value })} /></label><label>{prefix}Accessible name <Help text="The element's accessible name." /><input disabled={disabled} value={String(value.name ?? '')} placeholder="Submit" onChange={(e) => onChange({ ...value, name: e.target.value })} /></label></>}
-      {strategy === 'text' && <label>{prefix}Visible text <Help text="Text visibly rendered inside the target element." /><input disabled={disabled} value={String(value.text ?? '')} placeholder="Success" onChange={(e) => onChange({ ...value, text: e.target.value })} /></label>}
-      {strategy === 'css' && <label>{prefix}CSS selector <Help text="A CSS selector only; XPath and JavaScript are rejected." /><input disabled={disabled} value={String(value.selector ?? '')} placeholder="#username" onChange={(e) => onChange({ ...value, selector: e.target.value })} /></label>}
+      {strategy === 'label' && field(`${prefix}Label`, <input disabled={disabled} value={String(value.label ?? '')} placeholder="Email address" onChange={(e) => onChange({ ...value, label: e.target.value })} />)}
+      {strategy === 'role' && <><label>{prefix}Role <Help text="The accessible role, such as button or textbox." /><input disabled={disabled} value={String(value.role ?? '')} placeholder="button" onChange={(e) => onChange({ ...value, role: e.target.value })} /></label>{field(`${prefix}Accessible name`, <input disabled={disabled} value={String(value.name ?? '')} placeholder="Submit" onChange={(e) => onChange({ ...value, name: e.target.value })} />)}</>}
+      {strategy === 'text' && field(`${prefix}Visible text`, <input disabled={disabled} value={String(value.text ?? '')} placeholder="Success" onChange={(e) => onChange({ ...value, text: e.target.value })} />)}
+      {strategy === 'css' && field(`${prefix}CSS selector`, <input disabled={disabled} value={String(value.selector ?? '')} placeholder="#username" onChange={(e) => onChange({ ...value, selector: e.target.value })} />)}
       <label className="inline-field"><input disabled={disabled} type="checkbox" checked={value.exact !== false} onChange={(e) => onChange({ ...value, exact: e.target.checked })} /> Exact match <Help text="When enabled, the label, name, or text must match exactly." /></label>
     </div>
   )
 }
 
-function LocatorEditor({ value, disabled, onChange }: { value: unknown; disabled: boolean; onChange: (value: LocatorValue) => void }) {
+function LocatorEditor({ value, disabled, onChange, picker }: { value: unknown; disabled: boolean; onChange: (value: LocatorValue) => void; picker?: FieldPicker }) {
   const locator = value && typeof value === 'object' && !Array.isArray(value) ? value as LocatorValue : { strategy: 'label', label: '', exact: true }
   const match = String(locator.match ?? 'strict')
   const scope = locator.scope && typeof locator.scope === 'object' ? locator.scope as LocatorValue : undefined
@@ -181,6 +189,7 @@ function LocatorEditor({ value, disabled, onChange }: { value: unknown; disabled
         value={locator}
         disabled={disabled}
         onChange={(target) => onChange({ ...target, match: locator.match ?? 'strict', ...(locator.nth === undefined ? {} : { nth: locator.nth }), ...(scope ? { scope } : {}) })}
+        picker={picker}
       />
       <label>
         Match mode <Help text="Strict requires exactly one match." />
@@ -202,56 +211,86 @@ function LocatorEditor({ value, disabled, onChange }: { value: unknown; disabled
   )
 }
 
-function PickerControls({ workflowId, nodeId, field, disabled, clientId, agentConnected, event, onAccept, draft, onDraftChange }: { workflowId: number; nodeId: string; field: string; disabled: boolean; clientId: string; agentConnected: boolean; event?: PickerEvent; onAccept: (locator: LocatorValue) => void; draft?: PickerDraft; onDraftChange: (next: PickerDraft) => void }) {
+function PickerControls({ nodeId: _nodeId, field, disabled, clientId: _clientId, agentConnected, event, onAccept, draft, session, onSessionChange, onDraftChange }: { nodeId: string; field: string; disabled: boolean; clientId: string; agentConnected: boolean; event?: PickerEvent; onAccept: (locator: LocatorValue) => void; draft?: PickerDraft; session?: PickerSession; onSessionChange?: (session?: PickerSession) => void; onDraftChange: (next: PickerDraft) => void }) {
   const [localDraft, setLocalDraft] = useState<PickerDraft>({ requestedUrl: '' })
   const currentDraft = draft ?? localDraft
   const sessionId = currentDraft.sessionId
+  const activeSessionId = session?.sessionId === sessionId ? sessionId : undefined
   const status = currentDraft.status ?? (agentConnected ? 'Browser ready' : 'Agent unavailable')
   const requestedUrl = currentDraft.requestedUrl
-  const result = currentDraft.result
+  const result = activeSessionId ? currentDraft.result : undefined
+  const reusableSession = session && session.sessionId !== sessionId ? session : undefined
+  const readinessReason = disabled
+    ? 'Published versions are read-only.'
+    : !agentConnected
+      ? 'Connect the picker agent first.'
+      : !activeSessionId && !reusableSession
+        ? 'Open the picker browser first.'
+        : !activeSessionId && reusableSession?.status !== 'Browser ready'
+          ? 'Picking is already in progress.'
+          : activeSessionId && status !== 'Browser ready' && !result
+            ? 'Picking is already in progress.'
+            : undefined
   const update = (changes: Partial<PickerDraft>) => {
     const next = { ...currentDraft, ...changes }
     if (draft === undefined) setLocalDraft(next)
     onDraftChange(next)
+    if (next.sessionId) onSessionChange?.({ sessionId: next.sessionId, status: next.status ?? 'Browser ready', requestedUrl: next.requestedUrl })
   }
 
-  useEffect(() => { if (!sessionId) update({ status: agentConnected ? 'Browser ready' : 'Agent unavailable' }) }, [agentConnected, sessionId])
   useEffect(() => {
-    if (!event || event.session_id !== sessionId) return
-    if (event.type === 'picker.session.updated') update({ status: String(event.payload?.status ?? 'Waiting for agent') })
+    const nextStatus = agentConnected ? 'Browser ready' : 'Agent unavailable'
+    if (!sessionId && currentDraft.status !== nextStatus) update({ status: nextStatus })
+  }, [agentConnected, currentDraft.status, sessionId])
+  useEffect(() => {
+    if (!event || event.session_id !== activeSessionId) return
+    if (event.type === 'picker.session.updated') {
+      const state = String(event.payload?.status ?? 'waiting_for_agent')
+      update({ status: state === 'browser_ready' ? 'Browser ready' : state === 'waiting_for_agent' ? 'Waiting for agent' : state === 'browser_starting' ? 'Opening browser' : state.replaceAll('_', ' ') })
+    }
     if (event.type === 'picker.session.accepted') update({ status: 'Opening browser' })
     if (event.type === 'browser.opened') update({ status: 'Browser ready' })
     if (event.type === 'picker.inspect.started') update({ status: 'Select an element' })
-    if (event.type === 'picker.inspect.cancelled') update({ status: 'Browser ready' })
-    if (event.type === 'picker.element.selected') update({ result: event.payload as LocatorResult, status: 'Element selected' })
+    if (event.type === 'picker.inspect.cancelled') update({ result: undefined, status: 'Browser ready', notice: typeof event.payload?.message === 'string' ? event.payload.message : undefined })
+    if (event.type === 'picker.element.selected' && ['Starting selection', 'Select an element'].includes(status)) update({ result: event.payload as LocatorResult, status: 'Element selected' })
     if (event.type === 'picker.error') update({ status: String(event.payload?.message ?? 'Picker failed') })
-  }, [event, sessionId])
+  }, [event, activeSessionId, status])
 
-  const start = async () => {
+  const inspect = async () => { if (!activeSessionId) return; try { await api(`/editor-picker/sessions/${activeSessionId}/inspect`, { method: 'POST' }); update({ status: 'Starting selection', notice: undefined }) } catch (error) { update({ status: (error as Error).message }) } }
+  const stopInspection = async () => { if (!activeSessionId) return; try { await api(`/editor-picker/sessions/${activeSessionId}/inspect/cancel`, { method: 'POST' }); update({ result: undefined, status: 'Browser ready' }) } catch (error) { update({ status: (error as Error).message }) } }
+  const pickAgain = async () => {
+    if (!activeSessionId) return
     try {
-      update({ status: 'Waiting for agent' })
-      const created = await api<{ session_id: string; status: string }>('/editor-picker/sessions', { method: 'POST', body: JSON.stringify({ workflow_id: workflowId, node_id: nodeId, client_id: clientId, ...(requestedUrl.trim() ? { requested_url: requestedUrl.trim() } : {}) }) })
-      update({ sessionId: created.session_id, status: created.status === 'waiting_for_agent' ? 'Waiting for agent' : 'Opening browser', result: undefined })
+      await api(`/editor-picker/sessions/${activeSessionId}/inspect/cancel`, { method: 'POST' })
+      update({ result: undefined, status: 'Starting selection', notice: undefined })
+      await api(`/editor-picker/sessions/${activeSessionId}/inspect`, { method: 'POST' })
     } catch (error) { update({ status: (error as Error).message }) }
   }
-  const inspect = async () => { if (!sessionId) return; try { await api(`/editor-picker/sessions/${sessionId}/inspect`, { method: 'POST' }); update({ status: 'Starting selection' }) } catch (error) { update({ status: (error as Error).message }) } }
-  const stopInspection = async () => { if (!sessionId) return; try { await api(`/editor-picker/sessions/${sessionId}/inspect/cancel`, { method: 'POST' }); update({ result: undefined, status: 'Browser ready' }) } catch (error) { update({ status: (error as Error).message }) } }
   const cancel = async () => {
-    if (!sessionId) return
+    if (!activeSessionId) return
     try {
-      const startup = ['Waiting for agent', 'Opening browser', 'created', 'waiting_for_agent', 'agent_connected', 'browser_starting'].includes(status)
       const inspecting = status === 'Select an element'
-      if (startup || !inspecting) {
-        await api(`/editor-picker/sessions/${sessionId}/cancel`, { method: 'POST' })
-        update({ sessionId: undefined, result: undefined, status: 'Picker cancelled' })
-      } else await stopInspection()
+      if (inspecting) await stopInspection()
     } catch (error) { update({ status: (error as Error).message }) }
   }
 
-  return <section className="picker-controls" aria-label={`Element picker for ${field}`}>
-    <h3>Local element picker</h3><p className={agentConnected ? 'valid' : 'error'}>{status}</p>
-    {!sessionId && <><label>Optional start URL<input disabled={disabled || !agentConnected} value={requestedUrl} placeholder="https://example.com" onChange={(e) => update({ requestedUrl: e.target.value })} /></label><button type="button" disabled={disabled || !agentConnected} onClick={start}>Pick Element</button></>}
-    {sessionId && !result && <><button type="button" disabled={disabled || status !== 'Browser ready'} onClick={inspect}>Start Selecting</button><button type="button" onClick={cancel}>{status === 'Select an element' ? 'Cancel inspection' : 'Close picker'}</button></>}
+  const pickDisabled = Boolean(readinessReason)
+  const pickButton = <button type="button" aria-label={`Pick target element for ${field}`} title={readinessReason ?? `Pick target element for ${field}`} disabled={pickDisabled} onClick={async () => {
+    if (activeSessionId) return inspect()
+    if (!reusableSession) return
+    try {
+      update({ sessionId: reusableSession.sessionId, status: 'Starting selection', requestedUrl: reusableSession.requestedUrl, result: undefined })
+      await api(`/editor-picker/sessions/${reusableSession.sessionId}/inspect`, { method: 'POST' })
+    } catch (error) { update({ status: (error as Error).message }) }
+  }}>Pick</button>
+
+  return <>
+    <span className="picker-inline-control" aria-label={`Element picker for ${field}`}>
+      {pickButton}
+      {status === 'Select an element' && <button type="button" title="Cancel element picking" onClick={cancel}>Cancel</button>}
+      {status !== 'Browser ready' && <span className={status.toLowerCase().includes('accepted') ? 'valid picker-status' : 'picker-status'} role="status">{status}</span>}
+    </span>
+    {currentDraft.notice && <p className="error picker-notice">{currentDraft.notice}</p>}
     {result && <div className="picker-preview">
       <h4>Selected element</h4>
       <p className="picker-element-summary"><code>&lt;{result.element?.tag_name ?? 'element'}&gt;</code>{result.element?.role ? ` · ${result.element.role}` : ''}{result.element?.text ? ` · “${result.element.text}”` : ''}</p>
@@ -260,9 +299,9 @@ function PickerControls({ workflowId, nodeId, field, disabled, clientId, agentCo
       <p className={result.validation?.matches_selected_element ? 'valid' : 'error'}>{result.validation?.matches_selected_element ? `Validated · ${result.validation?.match_count ?? '?'} match` : 'Could not validate this locator'}</p>
       <details><summary>Technical locator details</summary><pre>{JSON.stringify(result.locator, null, 2)}</pre></details>
       {!!result.fallback_locators?.length && <details><summary>{result.fallback_locators.length} fallback locator{result.fallback_locators.length === 1 ? '' : 's'}</summary><ul>{result.fallback_locators.map((locator, index) => <li key={index}>{describeLocator(locator)}<details><summary>Details</summary><pre>{JSON.stringify(locator, null, 2)}</pre></details></li>)}</ul></details>}
-      <div className="picker-actions"><button type="button" disabled={disabled || !result.validation?.matches_selected_element} onClick={async () => { try { await api(`/editor-picker/sessions/${sessionId}/complete`, { method: 'POST' }); onAccept(result.locator); update({ status: 'Locator accepted locally; save the draft when ready', sessionId: undefined, result: undefined }) } catch (error) { update({ status: (error as Error).message }) } }}>Accept locator</button><button type="button" onClick={() => { void stopInspection() }}>Pick Again</button></div>
+      <div className="picker-actions"><button type="button" disabled={disabled || !result.validation?.matches_selected_element} onClick={async () => { if (!activeSessionId) return; try { await api(`/editor-picker/sessions/${activeSessionId}/complete`, { method: 'POST' }); onAccept(result.locator); onSessionChange?.({ sessionId: activeSessionId, status: 'Browser ready', requestedUrl }); update({ status: 'Locator accepted. Browser remains open for another node.', sessionId: undefined, result: undefined }) } catch (error) { update({ status: (error as Error).message }) } }}>Accept locator</button><button type="button" disabled={disabled || !agentConnected} onClick={() => { void pickAgain() }}>Pick Again</button></div>
     </div>}
-  </section>
+  </>
 }
 
 function SelectOptionEditor({ value, disabled, onChange }: { value: unknown; disabled: boolean; onChange: (value: unknown) => void }) {
@@ -288,7 +327,7 @@ function SelectOptionEditor({ value, disabled, onChange }: { value: unknown; dis
   )
 }
 
-function TicketFields({ value, disabled, onChange }: { value: unknown; disabled: boolean; onChange: (value: unknown) => void }) {
+function TicketFields({ value, disabled, onChange, picker }: { value: unknown; disabled: boolean; onChange: (value: unknown) => void; picker?: PickerFactory }) {
   const rows = Array.isArray(value) ? value as Array<Record<string, unknown>> : []
   const update = (index: number, patch: Record<string, unknown>) => onChange(rows.map((row, i) => i === index ? { ...row, ...patch } : row))
 
@@ -297,7 +336,7 @@ function TicketFields({ value, disabled, onChange }: { value: unknown; disabled:
       {rows.map((row, index) => (
         <div className="ticket-row" key={index}>
           <strong>Field {index + 1} target</strong>
-          <LocatorEditor disabled={disabled} value={row.target} onChange={(target) => update(index, { target })} />
+          <LocatorEditor disabled={disabled} value={row.target} onChange={(target) => update(index, { target })} picker={picker?.(`fields.${index}.target`, (target) => update(index, { target }))} />
           <select disabled={disabled} aria-label={`Field ${index + 1} control`} value={String(row.control_type ?? 'text')} onChange={(e) => update(index, { control_type: e.target.value, ...(e.target.value === 'select' ? { option: { by: 'label', value: '' } } : { option: undefined }) })}>
             <option>text</option>
             <option>textarea</option>
@@ -334,6 +373,22 @@ export function Inspector({ node, stepType, readOnly, onChange, picker }: Props)
   const args = node.data.args ?? {}
   const fields = stepType?.editor_schema.fields ?? []
   const changeArg = (key: string, value: unknown) => onChange({ ...node.data, args: { ...args, [key]: value } })
+  const pickerForField: PickerFactory = (fieldPath, onAccept) => {
+    if (!picker) return undefined
+    const draftKey = `${node.id}:${fieldPath}`
+    return {
+      nodeId: node.id,
+      field: fieldPath,
+      clientId: picker.clientId,
+      agentConnected: picker.agentConnected,
+      event: picker.event,
+      draft: picker.drafts?.[draftKey],
+      session: picker.session,
+      onSessionChange: picker.onSessionChange,
+      onDraftChange: (draft) => picker.onDraftChange?.(draftKey, draft),
+      onAccept: onAccept ?? ((locator) => changeArg(fieldPath, locator)),
+    }
+  }
 
   return (
     <aside className="inspector">
@@ -342,12 +397,11 @@ export function Inspector({ node, stepType, readOnly, onChange, picker }: Props)
       <ConnectionSideFields node={node} readOnly={readOnly} onChange={onChange} />
       {fields.map((field) => (
         <div className="argument-field" key={field.path}><label>
-          {getFieldLabel(field.path)}
-          {getRunInputKey(args[field.path]) ? <input disabled value={`Resolved from run input: ${getRunInputKey(args[field.path])}`} /> : field.widget === 'ticket-fields' ? <TicketFields disabled={readOnly} value={args[field.path]} onChange={(value) => changeArg(field.path, value)} /> : field.widget === 'locator' ? <LocatorEditor disabled={readOnly} value={args[field.path]} onChange={(value) => changeArg(field.path, value)} /> : field.widget === 'select' ? <select disabled={readOnly} value={String(args[field.path] ?? field.options?.[0]?.value ?? '')} onChange={(e) => changeArg(field.path, e.target.value)}>{(field.options ?? []).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select> : field.widget === 'select-option' ? <SelectOptionEditor disabled={readOnly} value={args[field.path]} onChange={(value) => changeArg(field.path, value)} /> : typeof args[field.path] === 'boolean' ? <input disabled={readOnly} type="checkbox" checked={Boolean(args[field.path])} onChange={(e) => changeArg(field.path, e.target.checked)} /> : isNumericField(stepType, field.path, args[field.path]) ? <input disabled={readOnly} type="number" step={isSecondsTimeoutField(field.path) ? 0.1 : getSchemaProperty(stepType, field.path)?.type === 'integer' ? 1 : 'any'} value={toDisplayNumber(field.path, args[field.path])} onChange={(e) => changeArg(field.path, fromDisplayNumber(field.path, e.target.value))} /> : <input disabled={readOnly} value={String(args[field.path] ?? '')} onChange={(e) => changeArg(field.path, e.target.value)} />}
+          {getFieldLabel(stepType, field.path)}
+          {getRunInputKey(args[field.path]) ? <input disabled value={`Resolved from run input: ${getRunInputKey(args[field.path])}`} /> : field.widget === 'ticket-fields' ? <TicketFields disabled={readOnly} value={args[field.path]} onChange={(value) => changeArg(field.path, value)} picker={pickerForField} /> : field.widget === 'locator' ? <LocatorEditor disabled={readOnly} value={args[field.path]} onChange={(value) => changeArg(field.path, value)} picker={pickerForField(field.path)} /> : field.widget === 'select' ? <select disabled={readOnly} value={String(args[field.path] ?? field.options?.[0]?.value ?? '')} onChange={(e) => changeArg(field.path, e.target.value)}>{(field.options ?? []).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select> : field.widget === 'select-option' ? <SelectOptionEditor disabled={readOnly} value={args[field.path]} onChange={(value) => changeArg(field.path, value)} /> : typeof args[field.path] === 'boolean' ? <input disabled={readOnly} type="checkbox" checked={Boolean(args[field.path])} onChange={(e) => changeArg(field.path, e.target.checked)} /> : isNumericField(stepType, field.path, args[field.path]) ? <input disabled={readOnly} type="number" step={isSecondsTimeoutField(field.path) ? 0.1 : getSchemaProperty(stepType, field.path)?.type === 'integer' ? 1 : 'any'} value={toDisplayNumber(field.path, args[field.path])} onChange={(e) => changeArg(field.path, fromDisplayNumber(field.path, e.target.value))} /> : <input disabled={readOnly} value={String(args[field.path] ?? '')} onChange={(e) => changeArg(field.path, e.target.value)} />}
           {isSecondsTimeoutField(field.path) && <small className="field-hint">Displayed in seconds, stored as milliseconds.</small>}
         </label>{supportsRunInput(stepType, field.path, field.widget, args[field.path]) && <div className="run-input-control"><label className="inline-field"><input disabled={readOnly} type="checkbox" checked={Boolean(getRunInputKey(args[field.path]))} onChange={(event) => changeArg(field.path, event.target.checked ? `{{ inputs.${field.path} }}` : structuredClone(stepType?.default_args[field.path] ?? ''))} /> Use run input</label>{getRunInputKey(args[field.path]) && <label>Input name<input disabled={readOnly} value={getRunInputKey(args[field.path])} onChange={(event) => { const key = event.target.value.replace(/[^a-zA-Z0-9_.]/g, ''); changeArg(field.path, `{{ inputs.${key || field.path} }}`) }} /></label>}</div>}</div>
       ))}
-      {picker && fields.filter((field) => field.widget === 'locator').map((field) => { const draftKey = `${node.id}:${field.path}`; return <PickerControls key={`picker-${field.path}`} workflowId={picker.workflowId} nodeId={node.id} field={field.path} disabled={readOnly} clientId={picker.clientId} agentConnected={picker.agentConnected} event={picker.event} draft={picker.drafts?.[draftKey]} onDraftChange={(draft) => picker.onDraftChange?.(draftKey, draft)} onAccept={(locator) => changeArg(field.path, locator)} /> })}
       <details>
         <summary>Advanced arguments JSON</summary>
         <textarea aria-label="Advanced arguments JSON" disabled={readOnly} value={advanced} onChange={(e) => setAdvanced(e.target.value)} />

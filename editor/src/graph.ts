@@ -184,13 +184,36 @@ export function rewireOrder(order: string[]): GraphEdge[] {
 }
 
 export function removeNode(nodes: GraphNode[], edges: GraphEdge[], nodeId: string): { nodes: GraphNode[]; edges: GraphEdge[] } {
-  const node = nodes.find((item) => item.id === nodeId)
-  if (!node || node.data.kind === 'start') return { nodes, edges }
+  return removeNodes(nodes, edges, [nodeId])
+}
+
+/** Remove graph nodes and every edge that references them. Start nodes are protected. */
+export function removeNodes(nodes: GraphNode[], edges: GraphEdge[], nodeIds: Iterable<string>): { nodes: GraphNode[]; edges: GraphEdge[] } {
+  const requested = new Set(nodeIds)
+  const removedIds = new Set(nodes
+    .filter((node) => requested.has(node.id) && node.data.kind !== 'start')
+    .map((node) => node.id))
+
+  if (!removedIds.size) return { nodes, edges }
 
   return {
-    nodes: nodes.filter((item) => item.id !== nodeId),
-    edges: edges.filter((edge) => edge.source !== nodeId && edge.target !== nodeId),
+    nodes: nodes.filter((node) => !removedIds.has(node.id)),
+    edges: edges.filter((edge) => !removedIds.has(edge.source) && !removedIds.has(edge.target)),
   }
+}
+
+/**
+ * Return the two edges around a regular step that can be replaced as a single
+ * linear slot. Controls are deliberately excluded because their branches need
+ * explicit user configuration.
+ */
+export function replacementEdgesForNode(nodes: GraphNode[], edges: GraphEdge[], nodeId: string): { incoming: GraphEdge; outgoing: GraphEdge } | undefined {
+  const node = nodes.find((item) => item.id === nodeId)
+  if (!node || node.data.kind !== 'step') return undefined
+
+  const incoming = edges.filter((edge) => edge.target === nodeId)
+  const outgoing = edges.filter((edge) => edge.source === nodeId)
+  return incoming.length === 1 && outgoing.length === 1 ? { incoming: incoming[0], outgoing: outgoing[0] } : undefined
 }
 
 export function defaultNodePosition(index: number): { x: number; y: number } {

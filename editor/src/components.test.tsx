@@ -106,23 +106,130 @@ describe('editor components', () => {
     expect(change).toHaveBeenCalledWith(expect.objectContaining({ args: { timeout_ms: 2500 } }))
   })
 
+  it.each([
+    ['css', { strategy: 'css', selector: '#password', exact: true }, 'CSS selector'],
+    ['label', { strategy: 'label', label: 'Password', exact: true }, 'Label'],
+    ['text', { strategy: 'text', text: 'Sign in', exact: true }, 'Visible text'],
+  ] as const)('places Pick beside the %s locator field', (_strategy, locator, fieldLabel) => {
+    const click: StepType = { ...step, key: 'click', name: 'Click', default_args: { target: locator }, editor_schema: { fields: [{ path: 'target', widget: 'locator' }] } }
+    const node: GraphNode = { id: 'picker-layout', type: 'workflow', position: { x: 0, y: 0 }, data: { kind: 'step', step_type: 'click', args: click.default_args } }
+    render(<Inspector node={node} stepType={click} readOnly={false} onChange={() => undefined} picker={{ workflowId: 1, clientId: 'xxxxxxxxxxxxxxxx', agentConnected: true, session: { sessionId: 's', status: 'Browser ready', requestedUrl: '' } }} />)
+    const expectedValue = 'selector' in locator ? locator.selector : 'label' in locator ? locator.label : locator.text
+    const valueInput = screen.getByDisplayValue(expectedValue)
+    const field = valueInput.closest('label') as HTMLElement
+    expect(within(field).getByRole('button', { name: /Pick target element/ })).toBeEnabled()
+    expect(screen.getAllByText(fieldLabel).length).toBeGreaterThan(0)
+  })
+
+  it('places Pick beside Role accessible name, not the role control', () => {
+    const click: StepType = { ...step, key: 'click', name: 'Click', default_args: { target: { strategy: 'role', role: 'textbox', name: 'Password', exact: true } }, editor_schema: { fields: [{ path: 'target', widget: 'locator' }] } }
+    const node: GraphNode = { id: 'role-picker-layout', type: 'workflow', position: { x: 0, y: 0 }, data: { kind: 'step', step_type: 'click', args: click.default_args } }
+    render(<Inspector node={node} stepType={click} readOnly={false} onChange={() => undefined} picker={{ workflowId: 1, clientId: 'xxxxxxxxxxxxxxxx', agentConnected: true, session: { sessionId: 's', status: 'Browser ready', requestedUrl: '' } }} />)
+    const roleInput = screen.getByDisplayValue('textbox')
+    expect(within(roleInput.closest('label') as HTMLElement).queryByRole('button', { name: /Pick target element/ })).not.toBeInTheDocument()
+    const nameInput = screen.getByDisplayValue('Password')
+    expect(within(nameInput.closest('label') as HTMLElement).getByRole('button', { name: /Pick target element/ })).toBeEnabled()
+  })
+
+  it('places Pick beside each Fill ticket fields target and updates that row', async () => {
+    const fill: StepType = { ...step, key: 'ticket_fill_fields', name: 'Fill ticket fields', default_args: { fields: [{ target: { strategy: 'label', label: 'Subject', exact: true }, control_type: 'text', value: 'Issue' }] }, editor_schema: { fields: [{ path: 'fields', widget: 'ticket-fields' }] } }
+    const node: GraphNode = { id: 'ticket-fields-picker', type: 'workflow', position: { x: 0, y: 0 }, data: { kind: 'step', step_type: fill.key, args: fill.default_args } }
+    const change = vi.fn()
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({}) })
+    vi.stubGlobal('fetch', fetchMock)
+    const view = render(<Inspector node={node} stepType={fill} readOnly={false} onChange={change} picker={{ workflowId: 1, clientId: 'xxxxxxxxxxxxxxxx', agentConnected: true, session: { sessionId: 's', status: 'Browser ready', requestedUrl: '' } }} />)
+    fireEvent.click(view.getByRole('button', { name: /Pick target element/ }))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/editor-picker/sessions/s/inspect', expect.objectContaining({ method: 'POST' })))
+    view.rerender(<Inspector node={node} stepType={fill} readOnly={false} onChange={change} picker={{ workflowId: 1, clientId: 'xxxxxxxxxxxxxxxx', agentConnected: true, session: { sessionId: 's', status: 'Select an element', requestedUrl: '' }, event: { type: 'picker.element.selected', session_id: 's', payload: { locator: { strategy: 'css', selector: 'input[name="subject"]', exact: true, match: 'strict' }, validation: { match_count: 1, matches_selected_element: true } } } }} />)
+    fireEvent.click(view.getByRole('button', { name: 'Accept locator' }))
+    await waitFor(() => expect(change).toHaveBeenCalledWith(expect.objectContaining({ args: { fields: [{ target: { strategy: 'css', selector: 'input[name="subject"]', exact: true, match: 'strict' }, control_type: 'text', value: 'Issue' }] } })))
+    vi.unstubAllGlobals()
+  })
+
+  it('does not render the detached picker section', () => {
+    const click: StepType = { ...step, key: 'click', name: 'Click', default_args: { target: { strategy: 'label', label: 'Password', exact: true } }, editor_schema: { fields: [{ path: 'target', widget: 'locator' }] } }
+    const node: GraphNode = { id: 'no-detached-picker', type: 'workflow', position: { x: 0, y: 0 }, data: { kind: 'step', step_type: 'click', args: click.default_args } }
+    render(<Inspector node={node} stepType={click} readOnly={false} onChange={() => undefined} picker={{ workflowId: 1, clientId: 'xxxxxxxxxxxxxxxx', agentConnected: true, session: { sessionId: 's', status: 'Browser ready', requestedUrl: '' } }} />)
+    expect(screen.queryByRole('region', { name: /Element picker/ })).not.toBeInTheDocument()
+  })
+
+  it('renders Verify element under Assertion and stores its expected state and timeout', () => {
+    const verify: StepType = {
+      key: 'verify_element', name: 'Verify element', category: 'Assertion', description: 'Require a target to match an expected state.',
+      default_args: { target: { strategy: 'text', text: 'Status', exact: true }, expected_state: 'visible', timeout_ms: 30000 },
+      args_schema: { properties: { timeout_ms: { type: 'integer' } } },
+      editor_schema: { fields: [
+        { path: 'target', widget: 'locator' },
+        { path: 'expected_state', widget: 'select', options: [{ value: 'visible', label: 'Visible' }, { value: 'unchecked', label: 'Unchecked' }] },
+        { path: 'timeout_ms', widget: 'text' },
+      ] },
+    }
+    const node: GraphNode = { id: 'verify', type: 'workflow', position: { x: 0, y: 0 }, data: { kind: 'step', step_type: verify.key, args: verify.default_args } }
+    const change = vi.fn()
+    render(<><Palette stepTypes={[verify]} disabled={false} onAdd={() => undefined} onComment={() => undefined} /><Inspector node={node} stepType={verify} readOnly={false} onChange={change} /></>)
+    expect(screen.getByRole('heading', { name: 'Assertion' })).toBeInTheDocument()
+    expect(screen.getAllByText('Verify element')).toHaveLength(2)
+    expect(screen.getByText('Expected state')).toBeInTheDocument()
+    expect(screen.getByText('Verify within')).toBeInTheDocument()
+    fireEvent.change(screen.getByDisplayValue('Visible'), { target: { value: 'unchecked' } })
+    expect(change).toHaveBeenCalledWith(expect.objectContaining({ args: expect.objectContaining({ expected_state: 'unchecked' }) }))
+    fireEvent.change(screen.getByDisplayValue('30'), { target: { value: '10' } })
+    expect(change).toHaveBeenCalledWith(expect.objectContaining({ args: expect.objectContaining({ timeout_ms: 10000 }) }))
+  })
+
   it('shows picker availability and accepts a locator only into local node state', async () => {
     const click: StepType = { ...step, key: 'click', name: 'Click', default_args: { target: { strategy: 'label', label: 'Field label', exact: true } }, editor_schema: { fields: [{ path: 'target', widget: 'locator' }] } }
     const node: GraphNode = { id: 'click', type: 'workflow', position: { x: 0, y: 0 }, data: { kind: 'step', step_type: 'click', args: click.default_args } }
     const change = vi.fn()
     render(<Inspector node={node} stepType={click} readOnly={false} onChange={change} picker={{ workflowId: 1, clientId: 'xxxxxxxxxxxxxxxx', agentConnected: false }} />)
-    expect(screen.getByText('Agent unavailable')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Pick Element' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Pick target element for target' })).toBeDisabled()
 
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 201, json: async () => ({ session_id: 's', status: 'waiting_for_agent' }) }))
-    const active = render(<Inspector node={node} stepType={click} readOnly={false} onChange={change} picker={{ workflowId: 1, clientId: 'xxxxxxxxxxxxxxxx', agentConnected: true }} />)
-    fireEvent.click(within(active.container).getByRole('button', { name: 'Pick Element' }))
-    await waitFor(() => expect(within(active.container).getByText('Waiting for agent')).toBeInTheDocument())
-    active.rerender(<Inspector node={node} stepType={click} readOnly={false} onChange={change} picker={{ workflowId: 1, clientId: 'xxxxxxxxxxxxxxxx', agentConnected: true, event: { type: 'picker.element.selected', session_id: 's', payload: { locator: { strategy: 'role', role: 'button', name: 'Submit', exact: true }, validation: { match_count: 1, matches_selected_element: true } } } }} />)
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({}) })
+    vi.stubGlobal('fetch', fetchMock)
+    const active = render(<Inspector node={node} stepType={click} readOnly={false} onChange={change} picker={{ workflowId: 1, clientId: 'xxxxxxxxxxxxxxxx', agentConnected: true, session: { sessionId: 's', status: 'Browser ready', requestedUrl: '' } }} />)
+    fireEvent.click(within(active.container).getByRole('button', { name: 'Pick target element for target' }))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/editor-picker/sessions/s/inspect', expect.objectContaining({ method: 'POST' })))
+    active.rerender(<Inspector node={node} stepType={click} readOnly={false} onChange={change} picker={{ workflowId: 1, clientId: 'xxxxxxxxxxxxxxxx', agentConnected: true, session: { sessionId: 's', status: 'Select an element', requestedUrl: '' }, event: { type: 'picker.element.selected', session_id: 's', payload: { locator: { strategy: 'role', role: 'button', name: 'Submit', exact: false, match: 'nth', nth: 2, scope: { strategy: 'css', selector: '.dialog', exact: true } }, validation: { match_count: 1, matches_selected_element: true } } } }} />)
     fireEvent.click(within(active.container).getByRole('button', { name: 'Accept locator' }))
-    await waitFor(() => expect(change).toHaveBeenCalledWith(expect.objectContaining({ args: { target: { strategy: 'role', role: 'button', name: 'Submit', exact: true } } })))
+    await waitFor(() => expect(change).toHaveBeenCalledWith(expect.objectContaining({ args: { target: { strategy: 'role', role: 'button', name: 'Submit', exact: false, match: 'nth', nth: 2, scope: { strategy: 'css', selector: '.dialog', exact: true } } } })))
     // Inspector acceptance has no publish or run action.
     expect(screen.queryByText('Publish')).not.toBeInTheDocument()
     vi.unstubAllGlobals()
+  })
+
+  it('explains unavailable picker states and blocks published workflows', () => {
+    const click: StepType = { ...step, key: 'click', name: 'Click', default_args: { target: { strategy: 'label', label: 'Password', exact: true } }, editor_schema: { fields: [{ path: 'target', widget: 'locator' }] } }
+    const node: GraphNode = { id: 'read-only-picker', type: 'workflow', position: { x: 0, y: 0 }, data: { kind: 'step', step_type: 'click', args: click.default_args } }
+    const picker = { workflowId: 1, clientId: 'xxxxxxxxxxxxxxxx', agentConnected: true, session: { sessionId: 's', status: 'Browser ready', requestedUrl: '' } }
+    const view = render(<Inspector node={node} stepType={click} readOnly picker={picker} onChange={() => undefined} />)
+    const button = screen.getByRole('button', { name: /Pick target element/ })
+    expect(button).toBeDisabled()
+    expect(button).toHaveAttribute('title', 'Published versions are read-only.')
+    view.rerender(<Inspector node={node} stepType={click} readOnly={false} onChange={() => undefined} picker={{ ...picker, session: undefined }} />)
+    expect(screen.getByRole('button', { name: /Pick target element/ })).toHaveAttribute('title', 'Open the picker browser first.')
+  })
+
+  it('starts a new inspection immediately from Pick Again', async () => {
+    const click: StepType = { ...step, key: 'click', name: 'Click', default_args: { target: { strategy: 'label', label: 'Password', exact: true } }, editor_schema: { fields: [{ path: 'target', widget: 'locator' }] } }
+    const node: GraphNode = { id: 'pick-again', type: 'workflow', position: { x: 0, y: 0 }, data: { kind: 'step', step_type: 'click', args: click.default_args } }
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({}) })
+    vi.stubGlobal('fetch', fetchMock)
+    render(<Inspector node={node} stepType={click} readOnly={false} onChange={() => undefined} picker={{ workflowId: 1, clientId: 'xxxxxxxxxxxxxxxx', agentConnected: true, session: { sessionId: 's', status: 'Element selected', requestedUrl: '' }, drafts: { 'pick-again:target': { sessionId: 's', status: 'Element selected', requestedUrl: '', result: { locator: { strategy: 'label', label: 'Password', exact: true }, validation: { match_count: 1, matches_selected_element: true } } } } }} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Pick Again' }))
+    await waitFor(() => expect(fetchMock).toHaveBeenNthCalledWith(1, '/editor-picker/sessions/s/inspect/cancel', expect.objectContaining({ method: 'POST' })))
+    await waitFor(() => expect(fetchMock).toHaveBeenNthCalledWith(2, '/editor-picker/sessions/s/inspect', expect.objectContaining({ method: 'POST' })))
+    vi.unstubAllGlobals()
+  })
+
+  it('does not apply a picker result to a different selected node', () => {
+    const click: StepType = { ...step, key: 'click', name: 'Click', default_args: { target: { strategy: 'label', label: 'Password', exact: true } }, editor_schema: { fields: [{ path: 'target', widget: 'locator' }] } }
+    const first: GraphNode = { id: 'first-node', type: 'workflow', position: { x: 0, y: 0 }, data: { kind: 'step', step_type: 'click', args: click.default_args } }
+    const second: GraphNode = { id: 'second-node', type: 'workflow', position: { x: 0, y: 0 }, data: { kind: 'step', step_type: 'click', args: click.default_args } }
+    const change = vi.fn()
+    const picker = { workflowId: 1, clientId: 'xxxxxxxxxxxxxxxx', agentConnected: true, session: { sessionId: 's', status: 'Select an element', requestedUrl: '' }, drafts: { 'first-node:target': { sessionId: 's', status: 'Select an element', requestedUrl: '' } }, event: { type: 'picker.element.selected', session_id: 's', payload: { locator: { strategy: 'role', role: 'textbox', name: 'Password', exact: true }, validation: { match_count: 1, matches_selected_element: true } } } }
+    const view = render(<Inspector node={first} stepType={click} readOnly={false} onChange={change} picker={picker} />)
+    view.rerender(<Inspector node={second} stepType={click} readOnly={false} onChange={change} picker={picker} />)
+    expect(screen.queryByText('Selected element')).not.toBeInTheDocument()
+    expect(change).not.toHaveBeenCalled()
   })
 })

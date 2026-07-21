@@ -47,7 +47,9 @@ class PairingRequest:
 
 @dataclass
 class PickerSessionService:
-    session_ttl: timedelta = timedelta(minutes=10)
+    # A picker session owns a local browser context. Keep it long enough to
+    # collect several locators without requiring the user to authenticate again.
+    session_ttl: timedelta = timedelta(minutes=20)
     agent_token_ttl: timedelta = timedelta(minutes=15)
     sessions: dict[str, PickerSession] = field(default_factory=dict)
     agent_claims: dict[str, AgentClaim] = field(default_factory=dict)

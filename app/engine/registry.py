@@ -34,7 +34,7 @@ def _editor(*names: str) -> dict[str, Any]:
             "ticket-fields" if name == "fields"
             else "locator" if name in {"target", "submit_target", "confirm_target"}
             else "select-option" if name == "option"
-            else "select" if name == "state"
+            else "select" if name in {"state", "expected_state"}
             else "text"
         )
         field: dict[str, Any] = {"path": name, "widget": widget}
@@ -42,8 +42,21 @@ def _editor(*names: str) -> dict[str, Any]:
             field["options"] = [
                 {"value": "attached", "label": "Attached to DOM"},
                 {"value": "visible", "label": "Visible"},
-                {"value": "hidden", "label": "Hidden"},
+                {"value": "hidden", "label": "Not visible or absent"},
                 {"value": "detached", "label": "Detached from DOM"},
+            ]
+        if name == "expected_state":
+            field["options"] = [
+                {"value": "attached", "label": "Attached to DOM"},
+                {"value": "visible", "label": "Visible"},
+                {"value": "hidden", "label": "Not visible or absent"},
+                {"value": "detached", "label": "Detached from DOM"},
+                {"value": "enabled", "label": "Enabled"},
+                {"value": "disabled", "label": "Disabled"},
+                {"value": "editable", "label": "Editable"},
+                {"value": "not_editable", "label": "Not editable"},
+                {"value": "checked", "label": "Checked"},
+                {"value": "unchecked", "label": "Unchecked"},
             ]
         fields.append(field)
     return {"fields": fields}
@@ -60,6 +73,7 @@ _items = (
     StepDefinition("select_option", "Select option", "Interaction", "Select explicitly by label, value, or index.", SelectOptionArgs, {"target": LABEL_TARGET, "option": {"by": "label", "value": "Option"}}, _editor("target", "option"), executor.select_option),
     StepDefinition("wait_for_element", "Wait for element", "Wait", "Wait for a target to reach a selected state.", WaitForElementArgs, {"target": LABEL_TARGET, "state": "visible", "timeout_ms": 30000}, _editor("target", "state", "timeout_ms"), executor.wait_for_element),
     StepDefinition("wait_timeout", "Wait timeout", "Wait", "Wait a bounded duration.", WaitTimeoutArgs, {"timeout_ms": 1000}, _editor("timeout_ms"), executor.wait_timeout),
+    StepDefinition("verify_element", "Verify element", "Assertion", "Require a target to match an expected state.", VerifyElementArgs, {"target": LABEL_TARGET, "expected_state": "visible", "timeout_ms": 30000}, _editor("target", "expected_state", "timeout_ms"), executor.verify_element),
     StepDefinition("assert_url_not_equal", "Assert URL changed", "Assertion", "Require the current URL to differ.", AssertUrlNotEqualArgs, {"url": "https://example.com/login"}, _editor("url"), executor.assert_url_not_equal),
     StepDefinition("assert_text_visible", "Assert text visible", "Assertion", "Require unique visible text.", AssertTextVisibleArgs, {"text": "Success", "exact": True}, _editor("text", "exact"), executor.assert_text_visible),
     StepDefinition("ticket_select_scenario", "Select ticket scenario", "Ticket", "Select a ticket scenario.", TicketScenarioArgs, {"scenario_name": "Scenario name"}, _editor("scenario_name"), executor.ticket_select_scenario),

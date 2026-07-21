@@ -99,6 +99,15 @@ class WaitForElementArgs(StrictModel):
     timeout_ms: int = Field(default=30_000, ge=1, le=120_000)
 
 
+class VerifyElementArgs(StrictModel):
+    target: Locator
+    expected_state: Literal[
+        "attached", "visible", "hidden", "detached", "enabled", "disabled",
+        "editable", "not_editable", "checked", "unchecked",
+    ] = "visible"
+    timeout_ms: int = Field(default=30_000, ge=1, le=120_000)
+
+
 class WaitTimeoutArgs(StrictModel):
     timeout_ms: int = Field(default=1000, ge=0, le=120_000)
 

@@ -162,6 +162,7 @@ INSERT INTO `step_types` (`key`, `name`, `description`, `is_active`, `sort_order
   ('select_option', 'Select Option', 'Select value or label in dropdown.', 1, 40),
   ('wait_for_element', 'Wait For Element', 'Wait until element is present or visible.', 1, 50),
   ('wait_timeout', 'Wait Timeout', 'Wait for bounded duration.', 1, 55),
+  ('verify_element', 'Verify Element', 'Require an element to match an expected state.', 1, 65),
   ('assert_url_not_equal', 'Assert URL Not Equal', 'Assert current URL not equal value.', 1, 60),
   ('assert_text_visible', 'Assert Text Visible', 'Assert specific text visible on page.', 1, 70),
   ('ticket_select_scenario', 'Ticket Select Scenario', 'Select scenario in ticket UI scenario dropdown.', 1, 90),

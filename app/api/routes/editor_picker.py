@@ -135,6 +135,13 @@ async def cancel_inspection(session_id: str, user: dict = Depends(current_user))
         raise HTTPException(status_code=404, detail="Picker session not found")
     if session.state == "inspection_active":
         await picker_connections.send_agent(session.user_id, {"version": 1, "type": "picker.inspect.cancel", "session_id": session.id, "payload": {}})
+    elif session.state == "element_selected":
+        # The agent stops its inspector immediately after a selection. Discard
+        # that pending result without closing the browser so the user can pick
+        # a different element in the same authenticated browser context.
+        picker_sessions.transition(session, "browser_ready")
+        session.result = None
+        await _notify_editor(session, "picker.inspect.cancelled")
     elif session.state != "browser_ready":
         raise HTTPException(status_code=409, detail="Picker inspection is not active")
     return _session_response(session)
@@ -147,8 +154,11 @@ async def complete_session(session_id: str, user: dict = Depends(current_user)) 
         raise HTTPException(status_code=404, detail="Picker session not found")
     if session.state != "element_selected":
         raise HTTPException(status_code=409, detail="No selected element is ready to accept")
-    picker_sessions.transition(session, "completed")
-    await picker_connections.send_agent(session.user_id, {"version": 1, "type": "session.close", "session_id": session.id, "payload": {}})
+    # Accepting a locator releases the result, not the browser. This lets the
+    # same user/editor choose another workflow node and inspect it in the same
+    # page, including its cookies and in-page state.
+    picker_sessions.transition(session, "browser_ready")
+    session.result = None
     await _notify_editor(session, "picker.session.updated")
     return _session_response(session)
 
@@ -207,6 +217,12 @@ async def agent_socket(websocket: WebSocket) -> None:
                 picker_sessions.transition(session, "element_selected")
                 session.result = message.payload
             elif message.type == "picker.error":
+                if message.payload.get("recoverable") is True and session.state == "inspection_active":
+                    # A locator can be ambiguous without making the open browser
+                    # unusable. Return to ready so the user can select again.
+                    picker_sessions.transition(session, "browser_ready")
+                    await _notify_editor(session, "picker.inspect.cancelled", {"message": str(message.payload.get("message", "Choose a different element or try again."))})
+                    continue
                 picker_sessions.transition(session, "failed")
             elif message.type == "session.closed":
                 if session.state not in TERMINAL_STATES:

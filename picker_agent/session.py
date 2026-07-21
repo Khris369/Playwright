@@ -81,7 +81,7 @@ class AgentSession:
         metadata = {"tag_name": metadata.get("tag_name") or tag, "attributes": metadata.get("attributes") or attributes, "text": redact_text(metadata.get("text") or node.get("nodeValue")), "role": metadata.get("role"), "name": metadata.get("name"), "label": metadata.get("label")}
         candidates = generate_candidates(metadata)
         if not candidates:
-            await self.emit("picker.error", self.session_id, {"message": "No supported locator candidates were found"})
+            await self.emit("picker.error", self.session_id, {"code": "no_supported_locator", "message": "No supported locator candidates were found. Choose a different element or try again.", "recoverable": True})
             return
         validated = []
         try:
@@ -93,7 +93,7 @@ class AgentSession:
             await self.emit("picker.error", self.session_id, {"code": "page_closed", "message": "The picker page changed or closed before the locator could be validated"})
             return
         if not validated:
-            await self.emit("picker.error", self.session_id, {"message": "No unique supported locator could be validated"})
+            await self.emit("picker.error", self.session_id, {"code": "no_unique_locator", "message": "No unique supported locator could be validated. Choose a different element or try again.", "recoverable": True})
             return
         # Every candidate originates from CDP's selected backend node and must
         # resolve uniquely through the same Playwright locator APIs as the runner.

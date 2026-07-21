@@ -5,6 +5,7 @@ from typing import Any
 
 from app.engine.contracts import *
 from app.engine.locators import LocatorResolutionError, resolve_locator
+from playwright.sync_api import expect
 
 # Step handlers receive validated arguments and mutable run state. Browser
 # actions are skipped when no page exists, while logical state remains usable.
@@ -78,6 +79,58 @@ def wait_timeout(args: WaitTimeoutArgs, state: dict[str, Any]) -> StepResult:
     if (page := _page(state)) is not None:
         page.wait_for_timeout(args.timeout_ms)
     return StepResult(f"Waited for {args.timeout_ms}ms")
+
+
+def _target_summary(target: Locator) -> str:
+    """Produce a concise, user-facing locator description for assertion errors."""
+    if target.strategy == "role":
+        return f'role "{target.role}" named "{target.name}"'
+    if target.strategy == "label":
+        return f'label "{target.label}"'
+    if target.strategy == "text":
+        return f'text "{target.text}"'
+    return f'CSS selector "{target.selector}"'
+
+
+def verify_element(args: VerifyElementArgs, state: dict[str, Any]) -> StepResult:
+    """Assert a locator state using Playwright's retrying locator assertions."""
+    if (page := _page(state)) is None:
+        return StepResult(f"Verified target is {args.expected_state} ({args.timeout_ms}ms)")
+
+    locator = resolve_locator(page, args.target, require_unique=False)
+    assertion = expect(locator)
+    try:
+        if args.expected_state == "attached":
+            assertion.to_be_attached(timeout=args.timeout_ms)
+        elif args.expected_state == "visible":
+            assertion.to_be_visible(timeout=args.timeout_ms)
+        elif args.expected_state == "hidden":
+            assertion.to_be_hidden(timeout=args.timeout_ms)
+        elif args.expected_state == "detached":
+            assertion.to_be_attached(attached=False, timeout=args.timeout_ms)
+        elif args.expected_state == "enabled":
+            assertion.to_be_enabled(timeout=args.timeout_ms)
+        elif args.expected_state == "disabled":
+            assertion.to_be_disabled(timeout=args.timeout_ms)
+        elif args.expected_state == "editable":
+            assertion.to_be_editable(timeout=args.timeout_ms)
+        elif args.expected_state == "not_editable":
+            assertion.to_be_editable(editable=False, timeout=args.timeout_ms)
+        elif args.expected_state == "checked":
+            assertion.to_be_checked(timeout=args.timeout_ms)
+        else:
+            assertion.to_be_checked(checked=False, timeout=args.timeout_ms)
+    except Exception as exc:
+        suffix = " Target must be a compatible checkbox or radio control." if args.expected_state in {"checked", "unchecked"} else ""
+        raise StepExecutionError(
+            f"Expected {_target_summary(args.target)} to be {args.expected_state} within {args.timeout_ms / 1000:g} seconds.{suffix}"
+        ) from exc
+
+    if args.target.match == "strict" and args.expected_state not in {"hidden", "detached"}:
+        count = locator.count()
+        if count != 1:
+            raise LocatorResolutionError(f"strict locator matched {count} elements; expected exactly one")
+    return StepResult(f"Verified target is {args.expected_state} ({args.timeout_ms}ms)")
 
 
 def assert_url_not_equal(args: AssertUrlNotEqualArgs, state: dict[str, Any]) -> StepResult:
