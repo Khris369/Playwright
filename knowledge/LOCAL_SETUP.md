@@ -1,116 +1,76 @@
 # Local Setup Guide
 
-## Purpose
-This guide explains how to clone the repository and run the workflow builder locally.
+## What this runs
 
-The current default mode runs workflow executions inline from the API process. Redis and Celery are optional unless you intentionally switch to queued execution.
-The dashboard lives at `/ui`, and the dedicated React/Vite editor lives at `/ui/editor`.
+WorkflowBuilder is a FastAPI application with a separately built React/Vite graph editor, a MySQL database, and Playwright Chromium for browser runs. The default local mode executes runs in a FastAPI background task in the same interactive process, so a headed browser can be visible on the local desktop.
+
+Redis/Celery are **not required** for the current default path. Celery task definitions exist, but the HTTP dispatcher does not enqueue them unless the application code is explicitly changed to do so. Redis is optional for multi-process picker WebSocket routing.
 
 ## Prerequisites
 
-Install these before starting:
-
 - Python 3.11 or newer
 - Node.js 20 or newer
-- MySQL 8 or compatible MySQL/MariaDB server
-- Git
-- A terminal or PowerShell
+- MySQL 8+ or a compatible MySQL/MariaDB server
+- Git and PowerShell (commands below are Windows-oriented)
+- Chromium installed through Playwright
 
-Optional for queue mode:
+Optional:
 
-- Redis
+- Redis, only for picker relay experiments or future queued execution work
+- An OpenAI-compatible API key, only for AI editor assistance and run troubleshooting
 
-## 1. Clone the Repository
+## 1. Create and activate a virtual environment
 
-```powershell
-git clone <repo-url>
-cd playwright
-```
-
-If the repository is cloned into a different folder name, run all commands from that project root.
-
-## 2. Create a Python Virtual Environment
+From the repository root:
 
 ```powershell
 python -m venv venv
 .\venv\Scripts\Activate.ps1
-```
-
-If PowerShell blocks script execution, run:
-
-```powershell
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-.\venv\Scripts\Activate.ps1
-```
-
-## 3. Install Python Dependencies
-
-```powershell
 python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-## 4. Install Editor Dependencies
+If script execution is blocked, use `Set-ExecutionPolicy -Scope Process Bypass` for the current PowerShell session.
 
-The React/Vite editor is managed separately from the Python backend.
+## 2. Install and build the editor
+
+The editor source lives in `editor/`; its Vite output is written directly to `app/web/editor-dist/`, which FastAPI serves at `/ui/editor`.
 
 ```powershell
-cd editor
+Push-Location editor
 npm ci
-cd ..
-```
-
-## 5. Build the Editor
-
-```powershell
-cd editor
 npm run build
-cd ..
+Pop-Location
 ```
 
-## 6. Install Playwright Browsers
+Useful editor checks:
 
 ```powershell
-python -m playwright install
+Push-Location editor
+npm run typecheck
+npm test
+Pop-Location
 ```
 
-For Chromium only:
+Re-run `npm run build` after changing editor source before testing it through FastAPI.
+
+## 3. Install Playwright Chromium
 
 ```powershell
 python -m playwright install chromium
 ```
 
-## 7. Create the MySQL Database
+Use `python -m playwright install` instead if other browsers are needed. On Linux, browser dependencies may require `python -m playwright install --with-deps`.
 
-Log in to MySQL and create the database:
+## 4. Configure the application
 
-```sql
-CREATE DATABASE IF NOT EXISTS workflow_builder
-  CHARACTER SET utf8mb4
-  COLLATE utf8mb4_unicode_ci;
-```
-
-Example using MySQL CLI:
-
-```powershell
-mysql -u root -p -e "CREATE DATABASE IF NOT EXISTS workflow_builder CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
-```
-
-If your local MySQL root user has no password, omit `-p`.
-
-## 8. Create the `.env` File
-
-Create a `.env` file in the project root.
-
-Example local configuration:
+Create `.env` in the repository root. Do not commit it. Start with the following local example and replace all credentials/secrets with local values:
 
 ```env
-# Application
 APP_NAME=WorkflowBuilder
 APP_ENV=local
 APP_DEBUG=true
 
-# Database
 DB_CONNECTION=mysql
 DB_HOST=127.0.0.1
 DB_PORT=3306
@@ -123,91 +83,70 @@ DB_PREFIX=
 DB_STRICT=true
 DB_ENGINE=InnoDB
 
-# Optional named read replica
+# Optional read connection; it defaults to the primary connection when omitted.
 DB_READ_HOST=127.0.0.1
 DB_READ_PORT=3306
 DB_READ_DATABASE=workflow_builder
 DB_READ_USERNAME=root
 DB_READ_PASSWORD=
 
-# Queue, optional for future queued mode
-CELERY_BROKER_URL=redis://127.0.0.1:6379/0
-CELERY_RESULT_BACKEND=redis://127.0.0.1:6379/0
-CELERY_TASK_ALWAYS_EAGER=false
-
-# Playwright
 PLAYWRIGHT_HEADLESS=false
+WORKFLOW_ARTIFACTS_ENABLED=true
+WORKFLOW_ARTIFACTS_DIR=app/web/artifacts
+WORKFLOW_TRACE_ENABLED=true
+WORKFLOW_FINAL_SCREENSHOT_ENABLED=true
+WORKFLOW_STEP_SCREENSHOTS_ENABLED=false
+WORKFLOW_ARTIFACT_RETENTION_DAYS=14
 
-# Troubleshoot AI, optional
-OPENAI_API_KEY=
-OPENAI_CHAT_MODEL=gpt-4o-mini
-OPENAI_CHAT_COMPLETIONS_URL=https://api.openai.com/v1/chat/completions
+# Optional only: enables cross-process picker message relay.
+# PICKER_REDIS_URL=redis://127.0.0.1:6379/1
+
+# Optional only: used by AI assistant/troubleshooting endpoints.
+# OPENAI_API_KEY=
+# OPENAI_CHAT_MODEL=gpt-4o-mini
+# OPENAI_CHAT_COMPLETIONS_URL=https://api.openai.com/v1/chat/completions
+
+# Present for the Celery worker scaffold; not used by the default route dispatcher.
+# CELERY_BROKER_URL=redis://127.0.0.1:6379/0
+# CELERY_RESULT_BACKEND=redis://127.0.0.1:6379/0
+# CELERY_TASK_ALWAYS_EAGER=false
 ```
 
-Notes:
-- Use `PLAYWRIGHT_HEADLESS=false` if you want to see the browser window locally.
-- Use `PLAYWRIGHT_HEADLESS=true` for headless execution.
-- Leave `OPENAI_API_KEY` blank unless using AI troubleshooting/editor assistant features.
-- Do not commit `.env`.
+`PLAYWRIGHT_HEADLESS=false` is useful locally because the workflow runner launches Chromium from the API process. Set it to `true` for a non-interactive run environment.
 
-## 9. Apply SQL Files
+## 5. Initialize the database
 
-Apply SQL files from `sql/` in numeric order.
+### Fresh database
 
-Current ordered files:
-
-1. `001_init.sql`
-2. `002_schema_versions.sql`
-3. `003_step_types.sql`
-4. `004_step_types_ticket_steps.sql`
-5. `005_step_types_click_by_role.sql`
-6. `006_run_arg_presets.sql`
-7. `007_run_arg_presets_is_active.sql`
-8. `008_workflow_graph_versioning.sql`
-
-Example:
+`sql/001_init.sql` is the complete current bootstrap. It creates `workflow_builder`, selects it, creates all application tables and indexes, and seeds current roles, permissions, role mappings, and legacy step-type metadata.
 
 ```powershell
-mysql -u root -p workflow_builder < sql\001_init.sql
-mysql -u root -p workflow_builder < sql\002_schema_versions.sql
-mysql -u root -p workflow_builder < sql\003_step_types.sql
-mysql -u root -p workflow_builder < sql\004_step_types_ticket_steps.sql
-mysql -u root -p workflow_builder < sql\005_step_types_click_by_role.sql
-mysql -u root -p workflow_builder < sql\006_run_arg_presets.sql
-mysql -u root -p workflow_builder < sql\007_run_arg_presets_is_active.sql
-mysql -u root -p workflow_builder < sql\008_workflow_graph_versioning.sql
+mysql -u root -p < sql\001_init.sql
 ```
 
-If your MySQL user has no password:
+If the MySQL account has no password:
 
 ```powershell
-mysql -u root workflow_builder < sql\001_init.sql
+mysql -u root < sql\001_init.sql
 ```
 
-Repeat for the remaining SQL files.
+Do **not** apply the retained upgrade files after a new bootstrap.
 
-Important:
-- Some SQL files may be compatibility no-ops for newer fresh databases. Still apply them in order.
-- `001_init.sql` includes `USE workflow_builder;`, so make sure the database exists before applying it.
+### Existing database
 
-## 10. Verify Database Connection
+Back up the database first. For a database created before the consolidated bootstrap, apply only the applicable retained updates in the order documented by [sql/README.md](../sql/README.md): `007_run_arg_presets_is_active.sql` through `013_workflow_member_permissions.sql`.
+
+These update scripts are intentionally not idempotent; do not rerun them blindly and do not apply them to a fresh `001_init.sql` installation.
+
+## 6. Verify the database connection
 
 ```powershell
 python test_db_connection.py
 ```
 
-Expected result:
+If it fails, confirm MySQL is running, the `.env` values are correct, and the MySQL user can access `workflow_builder`.
 
-```text
-Connection successful. Query result: ...
-```
-
-If this fails, check:
-- MySQL is running.
-- `.env` database host, port, username, and password are correct.
-- The `workflow_builder` database exists.
-
-## 11. Start the API Server
+## 7. Start the application
 
 ```powershell
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
@@ -216,121 +155,59 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 Open:
 
 - Dashboard: `http://127.0.0.1:8000/ui`
-- Editor: `http://127.0.0.1:8000/ui/editor?workflow_id=<id>`
-- Health check: `http://127.0.0.1:8000/health`
+- React graph editor: `http://127.0.0.1:8000/ui/editor?workflow_id=<id>`
+- Health endpoint: `http://127.0.0.1:8000/health`
 
-## 12. Verify the App
+The first account is created through the bootstrap-admin flow. Once an account exists, use the login page and the user-management API/UI according to role permissions.
 
-In a second terminal:
+## 8. Smoke test
 
 ```powershell
 Invoke-RestMethod http://127.0.0.1:8000/
 Invoke-RestMethod http://127.0.0.1:8000/health
 ```
 
-Expected:
-- root endpoint returns the app API message
-- health endpoint returns `status = ok`
+Then:
 
-Functional smoke test:
+1. Bootstrap an admin account and sign in.
+2. Create a workflow and open it in the graph editor.
+3. Add a supported step, confirm server validation is successful, and save an unpublished version.
+4. Run the version with safe test inputs; inspect its run/step history and optional artifacts.
+5. Publish a valid version only after verifying it, because published versions are read-only in the editor.
 
-1. Open `http://127.0.0.1:8000/ui`.
-2. Create or import a workflow.
-3. Open the editor.
-4. Add or edit steps.
-5. Save the version.
-6. Use the editor Runs tab to open the dashboard Runs view for that workflow/version.
-7. Generate input template.
-8. Trigger a run.
-9. Monitor the run and step logs.
+## Optional local picker agent
 
-## Optional: Queue Mode with Redis and Celery
+The picker agent helps author locators in a separate headed local browser. It does not share its cookies or browser profile with the server-side runner.
 
-The default local setup does not require Redis/Celery. Use this only if you want queued background execution.
-
-Start Redis first.
-
-Then start the API:
-
-```powershell
-python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
-```
-
-Start a Celery worker in another terminal:
+In a second terminal, after the API is running:
 
 ```powershell
 .\venv\Scripts\Activate.ps1
-python -m celery -A app.worker.celery_app:celery_app worker --loglevel=info --pool=solo
+python -m picker_agent --server ws://127.0.0.1:8000
 ```
 
-Notes:
-- Celery is the background job runner.
-- Redis is the message broker Celery uses.
-- Playwright runs wherever the worker process runs.
-- If the worker runs on your machine in headed mode, the browser window opens on your machine.
+Pair the displayed code from the editor's picker-agent control. See [PICKER_AGENT.md](../PICKER_AGENT.md) for the protocol, packaging, and current limitations.
+
+## Artifact cleanup
+
+Run this periodically if workflow artifacts are enabled:
+
+```powershell
+python -m app.cli.cleanup_workflow_artifacts
+```
+
+Use `--days <positive-number>` to override `WORKFLOW_ARTIFACT_RETENTION_DAYS` for one cleanup run.
 
 ## Troubleshooting
 
-### UI Loads but Workflows Fail to Save
-Check the database connection and confirm all SQL files were applied.
+- **Editor does not reflect changes:** rebuild it with `cd editor; npm run build` and hard-refresh the browser.
+- **Browser does not open:** install Chromium and ensure the API is running in an interactive desktop session with `PLAYWRIGHT_HEADLESS=false`.
+- **Workflow save/run fails:** verify the version graph through the editor validation panel and confirm the fresh schema or the correct upgrade sequence was applied.
+- **AI endpoints return 502:** configure `OPENAI_API_KEY` and, if needed, `OPENAI_CHAT_COMPLETIONS_URL`; core workflow features do not require them.
+- **Picker disconnects after server restart:** this is expected in the current in-memory picker-session model. Reconnect/pair again; Redis relay does not make sessions durable.
 
-### Step Types Are Missing
-Confirm the `step_types` table has rows:
+## Local-security notes
 
-```sql
-SELECT `key`, `name`, `is_active` FROM step_types ORDER BY sort_order;
-```
-
-If rows are missing, reapply the SQL files in order.
-
-### Browser Does Not Open
-Check `PLAYWRIGHT_HEADLESS`.
-
-Use:
-
-```env
-PLAYWRIGHT_HEADLESS=false
-```
-
-Also confirm the API process is running in an interactive desktop session.
-
-### Playwright Browser Install Error
-Run:
-
-```powershell
-python -m playwright install
-```
-
-If browser dependencies are missing on Linux, run:
-
-```bash
-python -m playwright install --with-deps
-```
-
-### Port 8000 Already in Use
-Use another port:
-
-```powershell
-python -m uvicorn app.main:app --host 127.0.0.1 --port 8001 --reload
-```
-
-Then open:
-
-```text
-http://127.0.0.1:8001/ui
-```
-
-### OpenAI Features Fail
-The troubleshoot/editor assistant features require `OPENAI_API_KEY`.
-
-Core workflow builder features should still work without it.
-
-## Current Local Development Notes
-
-- This app is currently intended for local/internal development.
-- Do not expose the app publicly without authentication and access controls.
-- Do not store plaintext credentials in workflow JSON for shared usage.
-- Prefer input presets and future secret references for sensitive values.
-- For larger team use, review the future plans in:
-  - `knowledge/SCALING_ENHANCEMENT_TIMELINE.md`
-  - `knowledge/LOCAL_AGENT_FUTURE_PLAN.md`
+- Keep `.env`, generated artifacts, and any local credentials out of version control.
+- Do not expose this development configuration publicly. A production deployment requires TLS/reverse-proxy hardening, secret management, rate limiting, durable worker/session design, and operational monitoring.
+- Store sensitive workflow values outside shared workflow definitions; use run inputs/presets only with appropriate access control.

@@ -47,7 +47,8 @@ CREATE TABLE IF NOT EXISTS `workflows` (
   `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
-  KEY `idx_workflows_owner_status` (`owner_user_id`, `status`, `created_at`)
+  KEY `idx_workflows_owner_status` (`owner_user_id`, `status`, `created_at`),
+  KEY `idx_workflows_updated_at` (`updated_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `workflow_versions` (
@@ -207,6 +208,7 @@ CREATE TABLE IF NOT EXISTS `user_roles` (
   `role_id` INT NOT NULL,
   `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`user_id`, `role_id`),
+  KEY `idx_user_roles_role` (`role_id`),
   CONSTRAINT `fk_user_roles_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
   CONSTRAINT `fk_user_roles_role` FOREIGN KEY (`role_id`) REFERENCES `roles` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -215,6 +217,7 @@ CREATE TABLE IF NOT EXISTS `role_permissions` (
   `role_id` INT NOT NULL,
   `permission_id` INT NOT NULL,
   PRIMARY KEY (`role_id`, `permission_id`),
+  KEY `idx_role_permissions_permission` (`permission_id`),
   CONSTRAINT `fk_role_permissions_role` FOREIGN KEY (`role_id`) REFERENCES `roles` (`id`) ON DELETE CASCADE,
   CONSTRAINT `fk_role_permissions_permission` FOREIGN KEY (`permission_id`) REFERENCES `permissions` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -224,6 +227,7 @@ CREATE TABLE IF NOT EXISTS `workflow_members` (
   `user_id` INT NOT NULL,
   `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`workflow_id`, `user_id`),
+  KEY `idx_workflow_members_user` (`user_id`, `workflow_id`),
   CONSTRAINT `fk_workflow_members_workflow` FOREIGN KEY (`workflow_id`) REFERENCES `workflows` (`id`) ON DELETE CASCADE,
   CONSTRAINT `fk_workflow_members_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -263,3 +267,5 @@ INSERT IGNORE INTO `role_permissions` (`role_id`, `permission_id`)
 SELECT r.id, p.id FROM `roles` r JOIN `permissions` p ON p.permission_key = 'workflow.edit' WHERE r.name = 'editor';
 INSERT IGNORE INTO `role_permissions` (`role_id`, `permission_id`)
 SELECT r.id, p.id FROM `roles` r JOIN `permissions` p ON p.permission_key = 'workflow.run' WHERE r.name = 'runner';
+INSERT IGNORE INTO `role_permissions` (`role_id`, `permission_id`)
+SELECT r.id, p.id FROM `roles` r JOIN `permissions` p ON p.permission_key = 'workflow.delete' WHERE r.name = 'editor';
