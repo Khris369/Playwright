@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -161,7 +162,12 @@ def ticket_select_scenario(args: TicketScenarioArgs, state: dict[str, Any]) -> S
         search = page.locator("input.select2-search__field")
         if search.is_visible():
             search.fill(args.scenario_name)
-        option = page.get_by_text(args.scenario_name, exact=True)
+        # Select2 keeps hidden result trees in the DOM. Restrict the match to
+        # visible result options so a hidden duplicate does not make a valid
+        # selection fail the uniqueness check.
+        option = page.locator(".select2-results__option:visible").filter(
+            has_text=re.compile(rf"^\s*{re.escape(args.scenario_name)}\s*$")
+        )
         if option.count() != 1:
             raise StepExecutionError("Scenario option was not unique")
         option.click()

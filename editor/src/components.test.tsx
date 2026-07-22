@@ -106,6 +106,21 @@ describe('editor components', () => {
     expect(change).toHaveBeenCalledWith(expect.objectContaining({ args: { timeout_ms: 2500 } }))
   })
 
+  it('supports a run input for visible text clicks', () => {
+    const click: StepType = { ...step, key: 'click', name: 'Click', default_args: { target: { strategy: 'text', text: 'Select an option', exact: true } }, editor_schema: { fields: [{ path: 'target', widget: 'locator' }] } }
+    const node: GraphNode = { id: 'dynamic-click', type: 'workflow', position: { x: 0, y: 0 }, data: { kind: 'step', step_type: 'click', args: click.default_args } }
+    const change = vi.fn()
+    const view = render(<Inspector node={node} stepType={click} readOnly={false} onChange={change} />)
+
+    fireEvent.click(view.getByLabelText('Use run input'))
+    expect(change).toHaveBeenLastCalledWith(expect.objectContaining({ args: { target: expect.objectContaining({ strategy: 'text', text: '{{ inputs.target_text }}' }) } }))
+
+    view.rerender(<Inspector node={{ ...node, data: { ...node.data, args: { target: { strategy: 'text', text: '{{ inputs.target_text }}', exact: true } } } }} stepType={click} readOnly={false} onChange={change} />)
+    expect(view.getByDisplayValue('Resolved from run input: target_text')).toBeDisabled()
+    fireEvent.change(view.getByLabelText('Input name'), { target: { value: 'option_text' } })
+    expect(change).toHaveBeenLastCalledWith(expect.objectContaining({ args: { target: expect.objectContaining({ text: '{{ inputs.option_text }}' }) } }))
+  })
+
   it.each([
     ['css', { strategy: 'css', selector: '#password', exact: true }, 'CSS selector'],
     ['label', { strategy: 'label', label: 'Password', exact: true }, 'Label'],

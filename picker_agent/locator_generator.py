@@ -7,6 +7,7 @@ from typing import Any
 SENSITIVE_ATTRIBUTE = re.compile(r"pass|token|secret|cookie|auth|value", re.I)
 VOLATILE = re.compile(r"^(css-|ng-|react|vue|ember|data-react|data-v-|_[a-z0-9]{6,})", re.I)
 SAFE_CLASS = re.compile(r"^[A-Za-z_][A-Za-z0-9_-]*$")
+DYNAMIC_ID = re.compile(r"^(?P<prefix>.+?)(?P<separator>[_-])(?P<suffix>\d{2,})$")
 
 
 @dataclass(frozen=True)
@@ -31,6 +32,14 @@ def _css_attr(name: str, value: str) -> str:
     return f'[{name}="{value.replace("\\", "\\\\").replace(chr(34), "\\\"")}"]'
 
 
+def _css_id_prefix(value: str) -> str | None:
+    match = DYNAMIC_ID.fullmatch(value)
+    if not match:
+        return None
+    prefix = f"{match.group('prefix')}{match.group('separator')}"
+    return _css_attr("id^", prefix)
+
+
 def generate_candidates(metadata: dict[str, Any]) -> list[Candidate]:
     """Return only locators executable by the repository's existing contract."""
     attrs = safe_attributes(dict(metadata.get("attributes") or {}))
@@ -51,8 +60,14 @@ def generate_candidates(metadata: dict[str, Any]) -> list[Candidate]:
     if attrs.get("placeholder"):
         candidates.append(Candidate({"strategy": "css", "selector": f"{tag}{_css_attr('placeholder', attrs['placeholder'])}", "exact": True, "match": "strict"}, 88, "placeholder"))
     stable_id = attrs.get("id")
+    dynamic_id_prefix = None
+    dynamic_id_fallback = None
     if stable_id and not VOLATILE.search(stable_id):
-        candidates.append(Candidate({"strategy": "css", "selector": f"#{stable_id}", "exact": True, "match": "strict"}, 86, "stable id"))
+        dynamic_id_prefix = _css_id_prefix(stable_id)
+        if dynamic_id_prefix is None:
+            candidates.append(Candidate({"strategy": "css", "selector": f"#{stable_id}", "exact": True, "match": "strict"}, 86, "stable id"))
+        else:
+            dynamic_id_fallback = Candidate({"strategy": "css", "selector": f"#{stable_id}", "exact": True, "match": "strict"}, 80, "dynamic id fallback")
     classes = [token for token in str(attrs.get("class", "")).split() if SAFE_CLASS.fullmatch(token) and not VOLATILE.search(token)]
     if classes:
         candidates.append(Candidate({"strategy": "css", "selector": tag + "".join(f".{token}" for token in classes), "exact": True, "match": "strict"}, 78, "class"))
@@ -60,6 +75,10 @@ def generate_candidates(metadata: dict[str, Any]) -> list[Candidate]:
         if attrs.get(key) and not VOLATILE.search(attrs[key]):
             candidates.append(Candidate({"strategy": "css", "selector": f"{tag}{_css_attr(key, attrs[key])}", "exact": True, "match": "strict"}, 82, key))
             break
+    if dynamic_id_prefix:
+        candidates.append(Candidate({"strategy": "css", "selector": f"{tag}{dynamic_id_prefix}", "exact": True, "match": "strict"}, 84, "dynamic id prefix"))
+        if dynamic_id_fallback:
+            candidates.append(dynamic_id_fallback)
     if text and len(text) <= 160:
         candidates.append(Candidate({"strategy": "text", "text": text, "exact": True, "match": "strict"}, 70, "visible text"))
     css = metadata.get("css")
