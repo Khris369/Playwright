@@ -24,12 +24,14 @@ function describeLocator(locator: LocatorValue): string {
   if (strategy === 'label') return `Label “${String(locator.label ?? '')}”`
   if (strategy === 'text') return `Visible text “${String(locator.text ?? '')}”`
   if (strategy === 'css') return `CSS selector ${String(locator.selector ?? '')}`
+  if (strategy === 'xpath') return `XPath ${String(locator.selector ?? '')}`
+  if (strategy === 'fullxpath') return `Full XPath ${String(locator.selector ?? '')}`
   return strategy
 }
 
 type LocatorValue = Record<string, unknown>
 const RUN_INPUT_TEMPLATE = /^\{\{\s*inputs\.([a-zA-Z0-9_.]+)\s*\}\}$/
-const LOCATOR_STRATEGIES = ['label', 'role', 'text', 'css'] as const
+const LOCATOR_STRATEGIES = ['label', 'role', 'text', 'css', 'xpath', 'fullxpath'] as const
 type LocatorStrategy = typeof LOCATOR_STRATEGIES[number]
 
 const HANDLE_OPTIONS: Array<{ value?: HandleSide; label: string }> = [
@@ -161,18 +163,22 @@ function LocatorTargetFields({ prefix = '', value, disabled, onChange, picker, a
   return (
     <div className="locator-target-fields">
       <label>
-        {prefix}Strategy <Help text="How Playwright locates the element. Prefer Label or Role; use CSS only when accessible locators are unavailable." />
+        {prefix}Strategy <Help text="How Playwright locates the element. Prefer Label or Role; use CSS or XPath only when accessible locators are unavailable." />
         <select disabled={disabled} value={strategy} onChange={(e) => onChange(normalizeLocatorTarget(value, e.target.value as LocatorStrategy))}>
           <option value="label">Label</option>
           <option value="role">Role</option>
           <option value="text">Visible text</option>
           <option value="css">CSS selector</option>
+          <option value="xpath">XPath</option>
+          <option value="fullxpath">Full XPath</option>
         </select>
       </label>
       {strategy === 'label' && field(`${prefix}Label`, <input disabled={disabled} value={String(value.label ?? '')} placeholder="Email address" onChange={(e) => onChange({ ...value, label: e.target.value })} />)}
       {strategy === 'role' && <><label>{prefix}Role <Help text="The accessible role, such as button or textbox." /><input disabled={disabled} value={String(value.role ?? '')} placeholder="button" onChange={(e) => onChange({ ...value, role: e.target.value })} /></label>{field(`${prefix}Accessible name`, <input disabled={disabled} value={String(value.name ?? '')} placeholder="Submit" onChange={(e) => onChange({ ...value, name: e.target.value })} />)}</>}
       {strategy === 'text' && field(`${prefix}Visible text`, <input disabled={disabled || Boolean(allowRunInput && getRunInputKey(value.text))} value={allowRunInput && getRunInputKey(value.text) ? `Resolved from run input: ${getRunInputKey(value.text)}` : String(value.text ?? '')} placeholder="Success" onChange={(e) => onChange({ ...value, text: e.target.value })} />)}
       {strategy === 'css' && field(`${prefix}CSS selector`, <input disabled={disabled} value={String(value.selector ?? '')} placeholder="#username" onChange={(e) => onChange({ ...value, selector: e.target.value })} />)}
+      {strategy === 'xpath' && field(`${prefix}XPath expression`, <input disabled={disabled} value={String(value.selector ?? '')} placeholder="//button[@id='submit']" onChange={(e) => onChange({ ...value, selector: e.target.value })} />)}
+      {strategy === 'fullxpath' && field(`${prefix}Full XPath expression`, <input disabled={disabled} value={String(value.selector ?? '')} placeholder="/html[1]/body[1]/button[1]" onChange={(e) => onChange({ ...value, selector: e.target.value })} />)}
       {allowRunInput && prefix === '' && strategy === 'text' && <div className="run-input-control locator-run-input"><label className="inline-field"><input disabled={disabled} type="checkbox" checked={Boolean(getRunInputKey(value.text))} onChange={(e) => onChange({ ...value, text: e.target.checked ? '{{ inputs.target_text }}' : '' })} /> Use run input</label>{getRunInputKey(value.text) && <label>Input name<input disabled={disabled} value={getRunInputKey(value.text)} onChange={(e) => { const key = e.target.value.replace(/[^a-zA-Z0-9_.]/g, ''); onChange({ ...value, text: `{{ inputs.${key || 'target_text'} }}` }) }} /></label>}</div>}
       <label className="inline-field"><input disabled={disabled} type="checkbox" checked={value.exact !== false} onChange={(e) => onChange({ ...value, exact: e.target.checked })} /> Exact match <Help text="When enabled, the label, name, or text must match exactly." /></label>
     </div>

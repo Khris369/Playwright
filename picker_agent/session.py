@@ -5,7 +5,7 @@ from typing import Any, Awaitable, Callable
 
 from .browser_manager import BrowserManager
 from .inspector import CdpInspector, InjectedInspector
-from .locator_generator import generate_candidates, redact_text
+from .locator_generator import generate_candidates, generate_xpath_candidates, redact_text
 
 
 class AgentSession:
@@ -78,9 +78,10 @@ class AgentSession:
         attributes = dict(zip(node.get("attributes", [])[::2], node.get("attributes", [])[1::2]))
         tag = str(node.get("nodeName", "")).lower()
         metadata = node.get("picker_metadata") if isinstance(node.get("picker_metadata"), dict) else {}
-        metadata = {"tag_name": metadata.get("tag_name") or tag, "attributes": metadata.get("attributes") or attributes, "text": redact_text(metadata.get("text") or node.get("nodeValue")), "role": metadata.get("role"), "name": metadata.get("name"), "label": metadata.get("label")}
+        metadata = {"tag_name": metadata.get("tag_name") or tag, "attributes": metadata.get("attributes") or attributes, "text": redact_text(metadata.get("text") or node.get("nodeValue")), "role": metadata.get("role"), "name": metadata.get("name"), "label": metadata.get("label"), "xpath": metadata.get("xpath"), "full_xpath": metadata.get("full_xpath")}
         candidates = generate_candidates(metadata)
-        if not candidates:
+        xpath_candidates = generate_xpath_candidates(metadata)
+        if not candidates and not xpath_candidates:
             await self.emit("picker.error", self.session_id, {"code": "no_supported_locator", "message": "No supported locator candidates were found. Choose a different element or try again.", "recoverable": True})
             return
         validated = []
@@ -89,6 +90,11 @@ class AgentSession:
                 count = await self._count(candidate.locator)
                 if count == 1:
                     validated.append((candidate, count))
+            if not validated:
+                for candidate in xpath_candidates:
+                    count = await self._count(candidate.locator)
+                    if count == 1:
+                        validated.append((candidate, count))
         except Exception:
             await self.emit("picker.error", self.session_id, {"code": "page_closed", "message": "The picker page changed or closed before the locator could be validated"})
             return
@@ -110,6 +116,8 @@ class AgentSession:
             return await page.get_by_label(locator["label"], exact=locator.get("exact", True)).count()
         if locator["strategy"] == "text":
             return await page.get_by_text(locator["text"], exact=locator.get("exact", True)).count()
+        if locator["strategy"] in {"xpath", "fullxpath"}:
+            return await page.locator(f"xpath={locator['selector']}").count()
         return await page.locator(locator["selector"]).count()
 
     async def close(self) -> None:

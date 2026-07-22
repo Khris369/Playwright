@@ -85,3 +85,20 @@ def generate_candidates(metadata: dict[str, Any]) -> list[Candidate]:
     if isinstance(css, str) and css and len(css) <= 1000:
         candidates.append(Candidate({"strategy": "css", "selector": css, "exact": True, "match": "strict"}, 50, "css"))
     return candidates
+
+
+def generate_xpath_candidates(metadata: dict[str, Any]) -> list[Candidate]:
+    """Return validated-later structural fallbacks supplied by the inspector."""
+    candidates: list[Candidate] = []
+    for key, source, score in (
+        ("xpath", "xpath fallback", 20),
+        ("full_xpath", "full xpath fallback", 10),
+    ):
+        expression = metadata.get(key)
+        if isinstance(expression, str) and expression.startswith(("/", "(")) and len(expression) <= 4000:
+            candidates.append(Candidate(
+                {"strategy": "xpath" if key == "xpath" else "fullxpath", "selector": expression, "exact": True, "match": "strict"},
+                score,
+                source,
+            ))
+    return candidates

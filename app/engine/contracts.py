@@ -10,7 +10,7 @@ class StrictModel(BaseModel):
 
 
 class LocatorTarget(StrictModel):
-    strategy: Literal["role", "label", "css", "text"]
+    strategy: Literal["role", "label", "css", "text", "xpath", "fullxpath"]
     role: str | None = Field(default=None, min_length=1, max_length=50)
     name: str | None = Field(default=None, min_length=1, max_length=500)
     label: str | None = Field(default=None, min_length=1, max_length=500)
@@ -25,6 +25,8 @@ class LocatorTarget(StrictModel):
             "label": ("label",),
             "css": ("selector",),
             "text": ("text",),
+            "xpath": ("selector",),
+            "fullxpath": ("selector",),
         }[self.strategy]
         allowed = set(required) | {"strategy", "exact", "scope", "match", "nth"}
         values = self.model_dump()
@@ -40,6 +42,10 @@ class LocatorTarget(StrictModel):
             lowered = selector.lower().strip()
             if lowered.startswith(("xpath=", "text=", "javascript:")) or "\x00" in selector:
                 raise ValueError("selector must be CSS only")
+        elif self.strategy in {"xpath", "fullxpath"}:
+            selector = self.selector or ""
+            if "\x00" in selector or not selector.lstrip().startswith(("/", "(")):
+                raise ValueError("selector must be a valid XPath expression")
         return self
 
 

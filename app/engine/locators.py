@@ -20,6 +20,8 @@ def _base_locator(root: Any, target: LocatorTarget) -> Any:
         return root.get_by_label(target.label, exact=target.exact)
     if target.strategy == "text":
         return root.get_by_text(target.text, exact=target.exact)
+    if target.strategy in {"xpath", "fullxpath"}:
+        return root.locator(f"xpath={target.selector}")
     return root.locator(target.selector)
 
 
