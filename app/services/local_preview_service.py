@@ -30,12 +30,13 @@ class PreviewSession:
     connection: object
     plan: list[dict[str, Any]]
     inputs: dict[str, Any]
-    keep_browser_open: bool
     expires_at: datetime
     current_node_id: str | None = None
     current_node_type: str | None = None
     current_url: str | None = None
     event_ids: set[str] = field(default_factory=set)
+    inspection_state: str = "running"
+    pick_request: dict[str, str] | None = None
 
 
 class LocalPreviewService:
@@ -43,7 +44,7 @@ class LocalPreviewService:
         self.sessions: dict[str, PreviewSession] = {}
         self.by_run: dict[int, str] = {}
 
-    def create(self, *, user_id: int, client_id: str, workflow_version_id: int, definition: dict, inputs: dict, target_node_id: str, connection: object, confirm_side_effects: bool, keep_browser_open: bool) -> PreviewSession:
+    def create(self, *, user_id: int, client_id: str, workflow_version_id: int, definition: dict, inputs: dict, target_node_id: str, connection: object, confirm_side_effects: bool) -> PreviewSession:
         version = WorkflowVersionRepository.get(workflow_version_id)
         if version is None:
             raise ValueError("workflow_version_not_found")
@@ -60,10 +61,68 @@ class LocalPreviewService:
         canonical = json.dumps(definition, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
         definition_hash = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
         run_id = WorkflowRunRepository.create_local_preview_run(int(version["workflow_id"]), workflow_version_id, user_id, definition, inputs, target_node_id, definition_hash)
-        session = PreviewSession(secrets.token_urlsafe(24), run_id, user_id, client_id, target_node_id, connection, possible, inputs, keep_browser_open, datetime.now(UTC) + timedelta(minutes=5))
+        session = PreviewSession(secrets.token_urlsafe(24), run_id, user_id, client_id, target_node_id, connection, possible, inputs, datetime.now(UTC) + timedelta(minutes=25))
         self.sessions[session.id] = session
         self.by_run[run_id] = session.id
         return session
+
+    def begin_pick(self, run_id: int, user_id: int, client_id: str, node_id: str, field_path: str) -> tuple[PreviewSession, str]:
+        session = self.get_owned(run_id, user_id)
+        if session is None or session.client_id != client_id or session.inspection_state != "inspection_ready" or session.pick_request:
+            raise ValueError("preview_inspection_unavailable")
+        request_id = secrets.token_urlsafe(18)
+        session.pick_request = {"id": request_id, "node_id": node_id, "field_path": field_path}
+        session.inspection_state = "picking"
+        return session, request_id
+
+    def cancel_pick(self, run_id: int, user_id: int, request_id: str) -> PreviewSession | None:
+        session = self.get_owned(run_id, user_id)
+        if session is None or not session.pick_request or session.pick_request["id"] != request_id:
+            return None
+        return session
+
+    def inspection_event(self, session_id: str, run_id: int, event_type: str, payload: dict[str, Any], message_id: str) -> PreviewSession | None:
+        session = self.sessions.get(session_id)
+        if session is None or session.run_id != run_id or message_id in session.event_ids:
+            return None
+        # Inspection messages are valid only while the retained-browser
+        # lifecycle is active.  In particular, an old ready/result event must
+        # never revive a preview that the backend has expired or closed.
+        if event_type == "preview.inspection.closed":
+            if session.inspection_state not in {"running", "inspection_ready", "picking", "closing"}:
+                return None
+        elif session.inspection_state in {"closed", "closing"} or datetime.now(UTC) > session.expires_at:
+            return None
+        if event_type == "preview.inspection.ready":
+            run = WorkflowRunRepository.get_run(run_id)
+            if session.inspection_state != "running" or run is None or run.get("status") != "passed":
+                return None
+        elif event_type == "preview.inspection.pick.started":
+            if session.inspection_state != "picking" or not session.pick_request or session.pick_request["id"] != payload.get("pick_request_id"):
+                return None
+        elif event_type in {"preview.inspection.pick.result", "preview.inspection.pick.cancelled", "preview.inspection.unavailable"}:
+            if session.inspection_state != "picking" or not session.pick_request or session.pick_request["id"] != payload.get("pick_request_id"):
+                return None
+        session.event_ids.add(message_id)
+        if event_type == "preview.inspection.ready":
+            session.inspection_state = "inspection_ready"
+            session.expires_at = datetime.now(UTC) + timedelta(minutes=20)
+        elif event_type == "preview.inspection.pick.started":
+            session.inspection_state = "picking"
+        elif event_type in {"preview.inspection.pick.result", "preview.inspection.pick.cancelled", "preview.inspection.unavailable"}:
+            session.inspection_state, session.pick_request = "inspection_ready", None
+        elif event_type == "preview.inspection.closed":
+            session.inspection_state, session.pick_request = "closed", None
+            self.sessions.pop(session.id, None)
+            self.by_run.pop(run_id, None)
+        return session
+
+    def expire(self) -> list[PreviewSession]:
+        now = datetime.now(UTC)
+        expired = [session for session in self.sessions.values() if session.inspection_state in {"inspection_ready", "picking"} and session.expires_at <= now]
+        for session in expired:
+            session.inspection_state, session.pick_request = "closing", None
+        return expired
 
     def get_owned(self, run_id: int, user_id: int) -> PreviewSession | None:
         session_id = self.by_run.get(run_id)

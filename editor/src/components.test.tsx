@@ -150,14 +150,16 @@ describe('editor components', () => {
     const fill: StepType = { ...step, key: 'ticket_fill_fields', name: 'Fill ticket fields', default_args: { fields: [{ target: { strategy: 'label', label: 'Subject', exact: true }, control_type: 'text', value: 'Issue' }] }, editor_schema: { fields: [{ path: 'fields', widget: 'ticket-fields' }] } }
     const node: GraphNode = { id: 'ticket-fields-picker', type: 'workflow', position: { x: 0, y: 0 }, data: { kind: 'step', step_type: fill.key, args: fill.default_args } }
     const change = vi.fn()
+    const notify = vi.fn()
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({}) })
     vi.stubGlobal('fetch', fetchMock)
-    const view = render(<Inspector node={node} stepType={fill} readOnly={false} onChange={change} picker={{ workflowId: 1, clientId: 'xxxxxxxxxxxxxxxx', agentConnected: true, session: { sessionId: 's', status: 'Browser ready', requestedUrl: '' } }} />)
+    const view = render(<Inspector node={node} stepType={fill} readOnly={false} onChange={change} picker={{ workflowId: 1, clientId: 'xxxxxxxxxxxxxxxx', agentConnected: true, session: { sessionId: 's', status: 'Browser ready', requestedUrl: '' }, notify }} />)
     fireEvent.click(view.getByRole('button', { name: /Pick target element/ }))
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/editor-picker/sessions/s/inspect', expect.objectContaining({ method: 'POST' })))
-    view.rerender(<Inspector node={node} stepType={fill} readOnly={false} onChange={change} picker={{ workflowId: 1, clientId: 'xxxxxxxxxxxxxxxx', agentConnected: true, session: { sessionId: 's', status: 'Select an element', requestedUrl: '' }, event: { type: 'picker.element.selected', session_id: 's', payload: { locator: { strategy: 'css', selector: 'input[name="subject"]', exact: true, match: 'strict' }, validation: { match_count: 1, matches_selected_element: true } } } }} />)
+    view.rerender(<Inspector node={node} stepType={fill} readOnly={false} onChange={change} picker={{ workflowId: 1, clientId: 'xxxxxxxxxxxxxxxx', agentConnected: true, session: { sessionId: 's', status: 'Select an element', requestedUrl: '' }, notify, event: { type: 'picker.element.selected', session_id: 's', payload: { locator: { strategy: 'css', selector: 'input[name="subject"]', exact: true, match: 'strict' }, validation: { match_count: 1, matches_selected_element: true } } } }} />)
     fireEvent.click(view.getByRole('button', { name: 'Accept locator' }))
     await waitFor(() => expect(change).toHaveBeenCalledWith(expect.objectContaining({ args: { fields: [{ target: { strategy: 'css', selector: 'input[name="subject"]', exact: true, match: 'strict' }, control_type: 'text', value: 'Issue' }] } })))
+    expect(notify).toHaveBeenCalledWith('Locator accepted. Browser remains open for another node.', 'success', 'locator-accepted:s:ticket-fields-picker:fields.0.target')
     vi.unstubAllGlobals()
   })
 
@@ -233,6 +235,24 @@ describe('editor components', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Pick Again' }))
     await waitFor(() => expect(fetchMock).toHaveBeenNthCalledWith(1, '/editor-picker/sessions/s/inspect/cancel', expect.objectContaining({ method: 'POST' })))
     await waitFor(() => expect(fetchMock).toHaveBeenNthCalledWith(2, '/editor-picker/sessions/s/inspect', expect.objectContaining({ method: 'POST' })))
+    vi.unstubAllGlobals()
+  })
+
+  it('cancels an element pick started in the preview browser like the default picker', async () => {
+    const click: StepType = { ...step, key: 'click', name: 'Click', default_args: { target: { strategy: 'label', label: 'Password', exact: true } }, editor_schema: { fields: [{ path: 'target', widget: 'locator' }] } }
+    const node: GraphNode = { id: 'preview-cancel', type: 'workflow', position: { x: 0, y: 0 }, data: { kind: 'step', step_type: 'click', args: click.default_args } }
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ pick_request_id: 'pick-1' }) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ cancelled: true }) })
+    const notify = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    render(<Inspector node={node} stepType={click} readOnly={false} onChange={() => undefined} picker={{ workflowId: 1, clientId: 'xxxxxxxxxxxxxxxx', agentConnected: true, notify, preview: { runId: 42, state: 'inspection_ready' } }} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Pick from preview' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Cancel' })).toBeInTheDocument())
+    expect(screen.getByRole('status', { name: '' })).toHaveTextContent('Select an element')
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    await waitFor(() => expect(fetchMock).toHaveBeenNthCalledWith(2, '/workflow-previews/42/inspection/cancel', expect.objectContaining({ method: 'POST', body: JSON.stringify({ pick_request_id: 'pick-1' }) })))
+    expect(notify).toHaveBeenCalledWith('Element picking cancelled.', 'info', 'preview-picker-cancelled:pick-1')
     vi.unstubAllGlobals()
   })
 

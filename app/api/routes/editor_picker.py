@@ -17,7 +17,7 @@ from app.services.workflow_run_repository import WorkflowRunRepository
 
 router = APIRouter(prefix="/editor-picker", tags=["editor-picker"])
 
-AGENT_EVENTS = {"agent.ready", "picker.session.accepted", "browser.opened", "browser.page_changed", "picker.inspect.started", "picker.inspect.cancelled", "picker.element.selected", "picker.error", "session.closed", "preview.accepted", "preview.step.started", "preview.step.completed", "preview.step.failed", "preview.passed", "preview.target_not_reached", "preview.cancelled", "preview.rejected", "preview.failed"}
+AGENT_EVENTS = {"agent.ready", "picker.session.accepted", "browser.opened", "browser.page_changed", "picker.inspect.started", "picker.inspect.cancelled", "picker.element.selected", "picker.error", "session.closed", "preview.accepted", "preview.step.started", "preview.step.completed", "preview.step.failed", "preview.passed", "preview.target_not_reached", "preview.cancelled", "preview.rejected", "preview.failed", "preview.inspection.ready", "preview.inspection.pick.started", "preview.inspection.pick.result", "preview.inspection.pick.cancelled", "preview.inspection.unavailable", "preview.inspection.closed"}
 EDITOR_EVENTS = {"editor.connect"}
 
 
@@ -198,7 +198,7 @@ async def agent_socket(websocket: WebSocket) -> None:
                 message_id = message.payload.get("message_id")
                 if not isinstance(run_id, int) or not isinstance(message_id, str) or len(message_id) > 100:
                     raise ValueError("Invalid preview event")
-                preview = local_previews.event(message.session_id, run_id, message.type, message.payload, message_id)
+                preview = local_previews.inspection_event(message.session_id, run_id, message.type, message.payload, message_id) if message.type.startswith("preview.inspection.") else local_previews.event(message.session_id, run_id, message.type, message.payload, message_id)
                 if preview is None or preview.connection is not websocket:
                     raise ValueError("Expired or unauthorized preview event")
                 run = WorkflowRunRepository.get_run(run_id)

@@ -13,6 +13,7 @@ import { dashboardRunsUrl } from './navigation'
 import type { GraphEdge, GraphNode, StepType, ValidationResult, Version } from './types'
 import { WorkflowNode } from './WorkflowNode'
 import { AssistantPanel } from './AssistantPanel'
+import { ToastViewport, useToasts, type Notify } from './Toast'
 
 type Snapshot = { nodes: GraphNode[]; edges: GraphEdge[] }
 type ReplacementSlot = { source: string; target: string; incomingData: GraphEdge['data']; outgoingData: GraphEdge['data'] }
@@ -76,7 +77,7 @@ export function AgentPairingControl({ connected, info }: { connected: boolean; i
   </div>
 }
 
-function PickerBrowserControl({ workflowId, nodeId, clientId, connected, disabled, session, onSessionChange }: { workflowId: number; nodeId?: string; clientId: string; connected: boolean; disabled: boolean; session?: PickerSession; onSessionChange: (session?: PickerSession) => void }) {
+function PickerBrowserControl({ workflowId, nodeId, clientId, connected, disabled, session, onSessionChange, notify }: { workflowId: number; nodeId?: string; clientId: string; connected: boolean; disabled: boolean; session?: PickerSession; onSessionChange: (session?: PickerSession) => void; notify: Notify }) {
   const [requestedUrl, setRequestedUrl] = useState('')
   const [status, setStatus] = useState('No browser open')
   const open = async () => {
@@ -88,12 +89,12 @@ function PickerBrowserControl({ workflowId, nodeId, clientId, connected, disable
         body: JSON.stringify({ workflow_id: workflowId, node_id: nodeId || 'picker-browser', client_id: clientId, ...(requestedUrl.trim() ? { requested_url: requestedUrl.trim() } : {}) }),
       })
       onSessionChange({ sessionId: created.session_id, status: created.status === 'waiting_for_agent' ? 'Waiting for agent' : 'Opening browser', requestedUrl })
-    } catch (error) { setStatus((error as Error).message) }
+    } catch (error) { setStatus('No browser open'); notify((error as Error).message, 'error', 'picker-browser-open-error') }
   }
   const close = async () => {
     if (!session) return
-    try { await api(`/editor-picker/sessions/${session.sessionId}/cancel`, { method: 'POST' }); onSessionChange(); setStatus('Browser closed') }
-    catch (error) { setStatus((error as Error).message) }
+    try { await api(`/editor-picker/sessions/${session.sessionId}/cancel`, { method: 'POST' }); onSessionChange(); setStatus('No browser open'); notify('Picker browser closed.', 'success', `picker-browser-closed:${session.sessionId}`) }
+    catch (error) { notify((error as Error).message, 'error', `picker-browser-close-error:${session.sessionId}`) }
   }
   useEffect(() => { if (session) setStatus(session.status) }, [session?.status])
   return <div className="picker-browser-control" aria-label="Shared picker browser">
@@ -113,7 +114,8 @@ export default function App() {
   const [selectedId, setSelectedId] = useState<string>()
   const [validation, setValidation] = useState<ValidationResult>({ valid: false, compiled_order: [], errors: [] })
   const [dirty, setDirty] = useState(false)
-  const [message, setMessage] = useState('Loading…')
+  const [message, setMessage] = useState('')
+  const { toasts, notify, dismiss: dismissToast } = useToasts()
   const [past, setPast] = useState<Snapshot[]>([])
   const [future, setFuture] = useState<Snapshot[]>([])
   const [replacementSlot, setReplacementSlot] = useState<ReplacementSlot>()
@@ -130,8 +132,7 @@ export default function App() {
   const [pickerAgentConnected, setPickerAgentConnected] = useState(false)
   const [pickerAgentInfo, setPickerAgentInfo] = useState<PickerAgentInfo>()
   const [pickerEvent, setPickerEvent] = useState<{ type: string; session_id?: string; payload?: Record<string, unknown> }>()
-  const [preview, setPreview] = useState<{ id: number; preview_session_id?: string; status: string; error_code?: string; current_node_id?: string; current_url?: string }>()
-  const [keepPreviewBrowserOpen, setKeepPreviewBrowserOpen] = useState(true)
+  const [preview, setPreview] = useState<{ id: number; preview_session_id?: string; status: string; error_code?: string; current_node_id?: string; current_url?: string; inspection_state?: string; retention_seconds?: number }>()
   // Picker drafts are keyed by node and locator field so unfinished selections
   // survive switching between nodes without changing workflow arguments.
   const [pickerDrafts, setPickerDrafts] = useState<Record<string, PickerDraft>>({})
@@ -139,6 +140,8 @@ export default function App() {
   useEffect(() => {
     if (!pickerSession || pickerEvent?.session_id !== pickerSession.sessionId) return
     if (pickerEvent.type === 'picker.error' || pickerEvent.type === 'session.closed') {
+      if (pickerEvent.type === 'picker.error') notify(String(pickerEvent.payload?.message ?? 'Picker failed'), 'error', `picker-error:${pickerSession.sessionId}:${String(pickerEvent.payload?.message ?? '')}`)
+      if (pickerEvent.type === 'session.closed') notify('Picker browser closed.', 'success', `picker-browser-closed:${pickerSession.sessionId}`)
       setPickerSession(undefined)
       return
     }
@@ -154,6 +157,7 @@ export default function App() {
       ? ({ browser_ready: 'Browser ready', waiting_for_agent: 'Waiting for agent', browser_starting: 'Opening browser' }[backendState] ?? backendState.replaceAll('_', ' '))
       : statusByEvent[pickerEvent.type]
     if (status && status !== pickerSession.status) setPickerSession((current) => current && current.sessionId === pickerSession.sessionId ? { ...current, status } : current)
+    if (pickerEvent.type === 'browser.opened') notify('Picker browser ready.', 'success', `picker-browser-ready:${pickerSession.sessionId}`)
   }, [pickerEvent, pickerSession])
 
   const readOnly = Boolean(version?.is_published)
@@ -274,7 +278,7 @@ export default function App() {
         const created = await api<Version>(`/workflows/${workflowId}/versions`, { method: 'POST', body: JSON.stringify({ definition_json: toDefinition(graph.nodes, graph.edges) }) })
         list = [created]
       }
-      setVersions(list); loadVersion(list[0], types); setMessage('Ready')
+      setVersions(list); loadVersion(list[0], types); setMessage(''); notify('Editor ready.', 'success', `editor-ready:${workflowId}`)
     }).catch((error) => setMessage((error as Error).message))
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workflowId])
@@ -296,7 +300,7 @@ export default function App() {
         setValidation(result)
         const byNode = result.errors.filter((item) => item.node_id).reduce((map, item) => map.set(item.node_id!, [...(map.get(item.node_id!) ?? []), item]), new Map<string, ValidationResult['errors']>())
         setNodes((current) => current.map((node) => ({ ...node, data: { ...node.data, errors: byNode.get(node.id)?.map((item) => item.message) ?? [] } })))
-      }).catch((error) => { if ((error as Error).name !== 'AbortError') setMessage((error as Error).message) }), 250)
+      }).catch((error) => { if ((error as Error).name !== 'AbortError') notify((error as Error).message, 'error', 'workflow-validation-error') }), 250)
     return () => { clearTimeout(timer); controller.abort() }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [validationKey])
@@ -319,7 +323,9 @@ export default function App() {
     if (!pickerEvent?.type.startsWith('preview.') || !pickerEvent.payload) return
     const payload = pickerEvent.payload
     const runId = Number(payload.run_id)
-    setPreview((current) => !current || runId !== current.id ? current : { ...current, status: String(payload.status ?? current.status), error_code: typeof payload.code === 'string' ? payload.code : current.error_code, current_node_id: typeof payload.node_id === 'string' ? payload.node_id : current.current_node_id, current_url: typeof payload.url === 'string' ? payload.url : current.current_url })
+    setPreview((current) => !current || runId !== current.id ? current : { ...current, status: String(payload.status ?? current.status), error_code: typeof payload.code === 'string' ? payload.code : current.error_code, current_node_id: typeof payload.node_id === 'string' ? payload.node_id : current.current_node_id, current_url: typeof payload.url === 'string' ? payload.url : current.current_url, inspection_state: pickerEvent.type === 'preview.inspection.ready' ? 'inspection_ready' : pickerEvent.type === 'preview.inspection.pick.started' ? 'picking' : pickerEvent.type === 'preview.inspection.closed' ? 'closed' : pickerEvent.type === 'preview.inspection.pick.result' || pickerEvent.type === 'preview.inspection.pick.cancelled' || pickerEvent.type === 'preview.inspection.unavailable' ? 'inspection_ready' : current.inspection_state, retention_seconds: typeof payload.expires_in_seconds === 'number' ? payload.expires_in_seconds : current.retention_seconds })
+    if (pickerEvent.type === 'preview.passed') notify('Preview completed.', 'success', `preview-completed:${runId}`)
+    if (pickerEvent.type === 'preview.cancelled') notify('Preview stopped.', 'success', `preview-stopped:${runId}`)
   }, [pickerEvent])
 
   useEffect(() => {
@@ -429,36 +435,38 @@ export default function App() {
     if (!version || !validation.valid) return
     try {
       const updated = await api<Version>(`/workflows/versions/${version.id}`, { method: 'PUT', body: JSON.stringify({ definition_json: definition, expected_lock_version: version.lock_version }) })
-      setVersion(updated); setVersions((items) => items.map((item) => item.id === updated.id ? updated : item)); setDirty(false); setMessage('Saved')
+      setVersion(updated); setVersions((items) => items.map((item) => item.id === updated.id ? updated : item)); setDirty(false); setMessage(''); notify('Saved.', 'success', `saved:${updated.id}:${updated.lock_version}`)
     } catch (error) {
       if (error instanceof ApiError && error.status === 409) setMessage(`Save conflict: ${JSON.stringify(error.detail)}`)
-      else setMessage((error as Error).message)
+      else notify((error as Error).message, 'error', 'save-error')
     }
   }
   const startPreview = async (node: GraphNode | undefined) => {
     if (!node || node.data.kind !== 'step' || !version || !validation.valid || !pickerAgentConnected) return
     try {
-      const created = await api<{ id: number; preview_session_id?: string; status: string; error_code?: string }>(`/workflow-previews`, { method: 'POST', body: JSON.stringify({ workflow_version_id: version.id, definition, inputs: {}, target_node_id: node.id, confirm_side_effects: window.confirm('This preview may fill fields, click controls, or select options before the target. Continue?'), keep_browser_open: keepPreviewBrowserOpen, client_id: pickerClientId }) })
+      const created = await api<{ id: number; preview_session_id?: string; status: string; error_code?: string }>(`/workflow-previews`, { method: 'POST', body: JSON.stringify({ workflow_version_id: version.id, definition, inputs: {}, target_node_id: node.id, confirm_side_effects: window.confirm('This preview may fill fields, click controls, or select options before the target. Continue?'), client_id: pickerClientId }) })
       setPreview(created)
-      setMessage('Preview started. Later edits require a new preview.')
-    } catch (error) { setMessage((error as Error).message) }
+      notify('Preview started. New edits will apply to your next preview.', 'info', `preview-started:${created.id}`)
+    } catch (error) { notify((error as Error).message, 'error', 'preview-start-error') }
     closeContextMenu()
   }
   const stopPreview = async () => {
     if (!preview) return
-    try { const updated = await api<{ status: string }>(`/workflow-previews/${preview.id}/stop`, { method: 'POST' }); setPreview((current) => current ? { ...current, status: updated.status } : current) } catch (error) { setMessage((error as Error).message) }
+    try { const updated = await api<{ status: string }>(`/workflow-previews/${preview.id}/stop`, { method: 'POST' }); setPreview((current) => current ? { ...current, status: updated.status } : current); notify('Preview stopped.', 'success', `preview-stopped:${preview.id}`) } catch (error) { notify((error as Error).message, 'error', `preview-stop-error:${preview.id}`) }
   }
   const closePreview = async () => {
     if (!preview) return
-    try { await api(`/workflow-previews/${preview.id}/close`, { method: 'POST' }); setPreview(undefined) } catch (error) { setMessage((error as Error).message) }
+    try { await api(`/workflow-previews/${preview.id}/close`, { method: 'POST' }); setPreview(undefined); notify('Preview browser closed.', 'success', `preview-closed:${preview.id}`) } catch (error) { notify((error as Error).message, 'error', `preview-close-error:${preview.id}`) }
   }
   const togglePublished = async () => {
     if (!version) return
     const action = version.is_published ? 'unpublish' : 'publish'
-    const updated = await api<Version>(`/workflows/versions/${version.id}/${action}`, { method: 'POST', body: JSON.stringify({ expected_lock_version: version.lock_version }) })
-    setVersion(updated); setVersions((items) => items.map((item) => item.id === updated.id ? updated : item)); setDirty(false); setMessage(updated.is_published ? 'Published' : 'Unpublished; editing enabled')
+    try {
+      const updated = await api<Version>(`/workflows/versions/${version.id}/${action}`, { method: 'POST', body: JSON.stringify({ expected_lock_version: version.lock_version }) })
+      setVersion(updated); setVersions((items) => items.map((item) => item.id === updated.id ? updated : item)); setDirty(false); notify(updated.is_published ? 'Published.' : 'Unpublished; editing enabled.', 'success', `published:${updated.id}:${updated.is_published}`)
+    } catch (error) { notify((error as Error).message, 'error', `publish-error:${version.id}`) }
   }
-  const createVersion = async () => { if (!version) return; const created = await api<Version>(`/workflows/${workflowId}/versions`, { method: 'POST', body: JSON.stringify({ base_version_id: version.id }) }); setVersions((items) => [created, ...items]); loadVersion(created); setMessage('Draft version created') }
+  const createVersion = async () => { if (!version) return; try { const created = await api<Version>(`/workflows/${workflowId}/versions`, { method: 'POST', body: JSON.stringify({ base_version_id: version.id }) }); setVersions((items) => [created, ...items]); loadVersion(created); notify('Draft version created.', 'success', `draft-created:${created.id}`) } catch (error) { notify((error as Error).message, 'error', `draft-create-error:${version.id}`) } }
 
   const moveLinear = (id: string, delta: number) => {
     const order = linearOrder(nodes, edges); const index = order.indexOf(id); const next = index + delta
@@ -468,13 +476,13 @@ export default function App() {
     commit(arrange(nodes, nextEdges), nextEdges)
   }
   const importDefinition = () => {
-    try { const parsed = JSON.parse(jsonImport); const graph = fromDefinition(parsed); checkpoint(); setNodes(graph.nodes.map((node) => ({ ...node, data: { ...node.data, title: stepTypes.find((item) => item.key === node.data.step_type)?.name } }))); setEdges(graph.edges); setDirty(true); setMessage('Imported; validation pending') } catch (error) { setMessage(`Import rejected: ${(error as Error).message}`) }
+    try { const parsed = JSON.parse(jsonImport); const graph = fromDefinition(parsed); checkpoint(); setNodes(graph.nodes.map((node) => ({ ...node, data: { ...node.data, title: stepTypes.find((item) => item.key === node.data.step_type)?.name } }))); setEdges(graph.edges); setDirty(true); notify('Imported; validation pending.', 'info', 'definition-imported') } catch (error) { notify(`Import rejected: ${(error as Error).message}`, 'warning', 'definition-import-rejected') }
   }
 
   return <main className="app-shell">
-    <header><a href="/ui">Dashboard</a><h1>Workflow editor</h1><nav className="editor-tabs" aria-label="Editor sections"><span className="editor-tab is-active" aria-current="page">Editor</span><button className="editor-tab" type="button" hidden={!canRun} disabled={!canOpenRuns} title={canOpenRuns ? 'Open the dashboard Runs tab for the current workflow and version.' : 'Load a workflow and version first.'} onClick={() => { window.location.href = runsUrl }}>Runs</button></nav><button type="button" aria-expanded={assistantOpen} onClick={() => setAssistantOpen((open) => !open)}>Assistant</button><select value={version?.id ?? ''} onChange={(e) => { const next = versions.find((item) => item.id === Number(e.target.value)); if (next && (!dirty || confirm('Discard unsaved changes?'))) loadVersion(next) }}>{versions.map((item) => <option value={item.id} key={item.id}>v{item.version_number}{item.is_published ? ' · published' : ' · draft'}</option>)}</select><button onClick={createVersion}>New version</button><button onClick={togglePublished} disabled={!version || (!version.is_published && !validation.valid)}>{version?.is_published ? 'Unpublish' : 'Publish'}</button><button onClick={save} disabled={readOnly || !dirty || !validation.valid}>Save</button><span>{message}</span></header>
+    <header><a href="/ui">Dashboard</a><h1>Workflow editor</h1><nav className="editor-tabs" aria-label="Editor sections"><span className="editor-tab is-active" aria-current="page">Editor</span><button className="editor-tab" type="button" hidden={!canRun} disabled={!canOpenRuns} title={canOpenRuns ? 'Open the dashboard Runs tab for the current workflow and version.' : 'Load a workflow and version first.'} onClick={() => { window.location.href = runsUrl }}>Runs</button></nav><button type="button" aria-expanded={assistantOpen} onClick={() => setAssistantOpen((open) => !open)}>Assistant</button><select value={version?.id ?? ''} onChange={(e) => { const next = versions.find((item) => item.id === Number(e.target.value)); if (next && (!dirty || confirm('Discard unsaved changes?'))) loadVersion(next) }}>{versions.map((item) => <option value={item.id} key={item.id}>v{item.version_number}{item.is_published ? ' · published' : ' · draft'}</option>)}</select><button onClick={createVersion}>New version</button><button onClick={togglePublished} disabled={!version || (!version.is_published && !validation.valid)}>{version?.is_published ? 'Unpublish' : 'Publish'}</button><button onClick={save} disabled={readOnly || !dirty || !validation.valid}>Save</button>{message && <span className="error" role="alert">{message}</span>}</header>
     {assistantOpen && <div className="assistant-drawer"><AssistantPanel workflowId={workflowId || undefined} versionId={version?.id} definition={definition} stepTypes={stepTypes} disabled={readOnly} onApply={applyAssistantSteps} onClose={() => setAssistantOpen(false)} /></div>}
-    <div className="toolbar"><button disabled={!past.length || readOnly} onClick={undo}>Undo</button><button disabled={!future.length || readOnly} onClick={redo}>Redo</button><button disabled={readOnly} onClick={() => commit(arrange(nodes, edges))}>Arrange</button><button disabled={!selected || readOnly} onClick={duplicate}>Duplicate</button><span className={validation.valid ? 'valid' : 'error'}>{validation.valid ? `${validation.compiled_order.length} steps · valid` : `${validation.errors.length} validation errors`}</span><AgentPairingControl connected={pickerAgentConnected} info={pickerAgentInfo}/>{workflowId > 0 && <PickerBrowserControl workflowId={workflowId} nodeId={selected?.id} clientId={pickerClientId} connected={pickerAgentConnected} disabled={readOnly} session={pickerSession} onSessionChange={setPickerSession}/>}</div>
+    <div className="toolbar"><button disabled={!past.length || readOnly} onClick={undo}>Undo</button><button disabled={!future.length || readOnly} onClick={redo}>Redo</button><button disabled={readOnly} onClick={() => commit(arrange(nodes, edges))}>Arrange</button><button disabled={!selected || readOnly} onClick={duplicate}>Duplicate</button><span className={`validation-summary ${validation.valid ? 'valid' : 'error'}`}>{validation.valid ? `${validation.compiled_order.length} steps · valid` : `${validation.errors.length} validation errors`}</span>{preview && <div className="preview-toolbar-group" aria-live="polite"><strong>Preview: {preview.status}</strong><span>Step: {preview.current_node_id ?? 'starting'}</span>{preview.current_url && <span title={preview.current_url}>URL: {preview.current_url}</span>}{preview.inspection_state === 'inspection_ready' && <span>Browser ready for element picking · retained for {Math.ceil((preview.retention_seconds ?? 1200) / 60)} minutes</span>}{preview.error_code && <span className="error">Error: {preview.error_code}</span>}{['queued', 'running'].includes(preview.status) && <button type="button" onClick={stopPreview}>Stop preview</button>}{preview.inspection_state && preview.inspection_state !== 'closed' && !['queued', 'running'].includes(preview.status) && <button type="button" onClick={closePreview}>Close preview browser</button>}</div>}<AgentPairingControl connected={pickerAgentConnected} info={pickerAgentInfo}/>{workflowId > 0 && <PickerBrowserControl workflowId={workflowId} nodeId={selected?.id} clientId={pickerClientId} connected={pickerAgentConnected} disabled={readOnly} session={pickerSession} onSessionChange={setPickerSession} notify={notify}/>}</div>
     <div className="workspace">
       <Palette stepTypes={stepTypes} disabled={readOnly} onAdd={addStep} onControl={addControl} onComment={addComment}/>
       <section className="canvas" ref={reactFlowWrapper}>
@@ -522,10 +530,9 @@ export default function App() {
           </div>
         )}
       </section>
-      <Inspector node={selected} stepType={selectedType} readOnly={readOnly} onChange={updateSelected} picker={workflowId ? { workflowId, clientId: pickerClientId, agentConnected: pickerAgentConnected, event: pickerEvent, drafts: pickerDrafts, session: pickerSession, onSessionChange: setPickerSession, onDraftChange: (key, draft) => setPickerDrafts((current) => ({ ...current, [key]: draft })) } : undefined}/>
+      <Inspector node={selected} stepType={selectedType} readOnly={readOnly} onChange={updateSelected} picker={workflowId ? { workflowId, clientId: pickerClientId, agentConnected: pickerAgentConnected, event: pickerEvent, drafts: pickerDrafts, session: pickerSession, preview: preview?.inspection_state === 'inspection_ready' || preview?.inspection_state === 'picking' ? { runId: preview.id, state: preview.inspection_state } : undefined, notify, onSessionChange: setPickerSession, onDraftChange: (key, draft) => setPickerDrafts((current) => ({ ...current, [key]: draft })) } : undefined}/>
     </div>
-    <label className="preview-toggle"><input type="checkbox" checked={keepPreviewBrowserOpen} onChange={(event) => setKeepPreviewBrowserOpen(event.target.checked)} /> Keep preview browser open after completion</label>
-    {preview && <section className="preview-panel" aria-live="polite"><strong>Preview: {preview.status}</strong><span> Target: {preview.current_node_id ?? 'starting'}</span>{preview.current_url && <span> URL: {preview.current_url}</span>}{preview.error_code && <span> Error: {preview.error_code}</span>}{['queued', 'running'].includes(preview.status) && <button type="button" onClick={stopPreview}>Stop preview</button>}{!['queued', 'running'].includes(preview.status) && keepPreviewBrowserOpen && <button type="button" onClick={closePreview}>Close preview browser</button>}</section>}
     <section className={`bottom-panels ${jsonOpen ? 'is-expanded' : ''}`}><details open={jsonOpen} onToggle={(event) => setJsonOpen(event.currentTarget.open)}><summary>Definition JSON preview / validated import</summary><div className="json-panel-content"><textarea aria-label="Definition JSON" value={jsonImport || JSON.stringify(definition, null, 2)} onChange={(e) => setJsonImport(e.target.value)}/><button disabled={readOnly} onClick={importDefinition}>Import and validate</button></div></details></section>
+    <ToastViewport toasts={toasts} onDismiss={dismissToast}/>
   </main>
 }

@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { api } from './api'
+import type { Notify } from './Toast'
 import type { GraphNode, HandleSide, StepType } from './types'
 
 type Props = {
@@ -14,9 +15,11 @@ type PickerEvent = { type: string; session_id?: string; payload?: Record<string,
 type LocatorResult = { locator: LocatorValue; fallback_locators?: LocatorValue[]; element?: { tag_name?: string; text?: string | null; role?: string | null }; validation?: { match_count?: number; matches_selected_element?: boolean } }
 export type PickerDraft = { sessionId?: string; status?: string; notice?: string; requestedUrl: string; result?: LocatorResult }
 export type PickerSession = { sessionId: string; status: string; requestedUrl: string }
-type InspectorPicker = { workflowId: number; clientId: string; agentConnected: boolean; event?: PickerEvent; drafts?: Record<string, PickerDraft>; session?: PickerSession; onSessionChange?: (session?: PickerSession) => void; onDraftChange?: (key: string, draft: PickerDraft) => void }
-type FieldPicker = { nodeId: string; field: string; clientId: string; agentConnected: boolean; event?: PickerEvent; draft?: PickerDraft; session?: PickerSession; onSessionChange?: (session?: PickerSession) => void; onDraftChange: (draft: PickerDraft) => void; onAccept: (locator: LocatorValue) => void }
+type PreviewPicker = { runId: number; state: string }
+type InspectorPicker = { workflowId: number; clientId: string; agentConnected: boolean; event?: PickerEvent; drafts?: Record<string, PickerDraft>; session?: PickerSession; preview?: PreviewPicker; notify?: Notify; onSessionChange?: (session?: PickerSession) => void; onDraftChange?: (key: string, draft: PickerDraft) => void }
+type FieldPicker = { nodeId: string; field: string; clientId: string; agentConnected: boolean; event?: PickerEvent; draft?: PickerDraft; session?: PickerSession; preview?: PreviewPicker; notify: Notify; onSessionChange?: (session?: PickerSession) => void; onDraftChange: (draft: PickerDraft) => void; onAccept: (locator: LocatorValue) => void }
 type PickerFactory = (fieldPath: string, onAccept?: (locator: LocatorValue) => void) => FieldPicker | undefined
+const ignoreNotification: Notify = () => undefined
 
 function describeLocator(locator: LocatorValue): string {
   const strategy = String(locator.strategy ?? 'locator')
@@ -219,8 +222,9 @@ function LocatorEditor({ value, disabled, onChange, picker, allowRunInput = fals
   )
 }
 
-function PickerControls({ nodeId: _nodeId, field, disabled, clientId: _clientId, agentConnected, event, onAccept, draft, session, onSessionChange, onDraftChange }: { nodeId: string; field: string; disabled: boolean; clientId: string; agentConnected: boolean; event?: PickerEvent; onAccept: (locator: LocatorValue) => void; draft?: PickerDraft; session?: PickerSession; onSessionChange?: (session?: PickerSession) => void; onDraftChange: (next: PickerDraft) => void }) {
+function PickerControls({ nodeId, field, disabled, clientId, agentConnected, event, onAccept, draft, session, preview, notify, onSessionChange, onDraftChange }: { nodeId: string; field: string; disabled: boolean; clientId: string; agentConnected: boolean; event?: PickerEvent; onAccept: (locator: LocatorValue) => void; draft?: PickerDraft; session?: PickerSession; preview?: PreviewPicker; notify: Notify; onSessionChange?: (session?: PickerSession) => void; onDraftChange: (next: PickerDraft) => void }) {
   const [localDraft, setLocalDraft] = useState<PickerDraft>({ requestedUrl: '' })
+  const [previewRequestId, setPreviewRequestId] = useState<string>()
   const currentDraft = draft ?? localDraft
   const sessionId = currentDraft.sessionId
   const activeSessionId = session?.sessionId === sessionId ? sessionId : undefined
@@ -259,27 +263,54 @@ function PickerControls({ nodeId: _nodeId, field, disabled, clientId: _clientId,
     if (event.type === 'picker.session.accepted') update({ status: 'Opening browser' })
     if (event.type === 'browser.opened') update({ status: 'Browser ready' })
     if (event.type === 'picker.inspect.started') update({ status: 'Select an element' })
-    if (event.type === 'picker.inspect.cancelled') update({ result: undefined, status: 'Browser ready', notice: typeof event.payload?.message === 'string' ? event.payload.message : undefined })
+    if (event.type === 'picker.inspect.cancelled') { update({ result: undefined, status: 'Browser ready', notice: undefined }); if (typeof event.payload?.message === 'string') notify(event.payload.message, 'info', `picker-cancelled:${activeSessionId}:${event.payload.message}`) }
     if (event.type === 'picker.element.selected' && ['Starting selection', 'Select an element'].includes(status)) update({ result: event.payload as LocatorResult, status: 'Element selected' })
-    if (event.type === 'picker.error') update({ status: String(event.payload?.message ?? 'Picker failed') })
+    if (event.type === 'picker.error') { notify(String(event.payload?.message ?? 'Picker failed'), 'error', `picker-error:${activeSessionId}:${String(event.payload?.message ?? '')}`); update({ status: agentConnected ? 'Browser ready' : 'Agent unavailable' }) }
   }, [event, activeSessionId, status])
+  useEffect(() => {
+    if (!event?.type.startsWith('preview.inspection.') || !event.payload || !previewRequestId || event.payload.pick_request_id !== previewRequestId) return
+    if (event.type === 'preview.inspection.pick.result') {
+      const selected = event.payload.result as LocatorResult | undefined
+      if (selected?.locator && selected.validation?.matches_selected_element) { onAccept(selected.locator); notify('Element selection applied.', 'success', `preview-picker-result:${previewRequestId}`) }
+      else notify('The selected element could not be validated.', 'warning', `preview-picker-invalid:${previewRequestId}`)
+      setPreviewRequestId(undefined)
+    }
+    if (event.type === 'preview.inspection.pick.cancelled') { notify('Element picking cancelled.', 'info', `preview-picker-cancelled:${previewRequestId}`); setPreviewRequestId(undefined) }
+    if (event.type === 'preview.inspection.unavailable') { notify(String(event.payload.message ?? 'Preview browser is unavailable.'), 'error', `preview-picker-unavailable:${previewRequestId}`); setPreviewRequestId(undefined) }
+  }, [event, previewRequestId, onAccept])
 
-  const inspect = async () => { if (!activeSessionId) return; try { await api(`/editor-picker/sessions/${activeSessionId}/inspect`, { method: 'POST' }); update({ status: 'Starting selection', notice: undefined }) } catch (error) { update({ status: (error as Error).message }) } }
-  const stopInspection = async () => { if (!activeSessionId) return; try { await api(`/editor-picker/sessions/${activeSessionId}/inspect/cancel`, { method: 'POST' }); update({ result: undefined, status: 'Browser ready' }) } catch (error) { update({ status: (error as Error).message }) } }
+  const inspect = async () => { if (!activeSessionId) return; try { await api(`/editor-picker/sessions/${activeSessionId}/inspect`, { method: 'POST' }); update({ status: 'Starting selection', notice: undefined }) } catch (error) { notify((error as Error).message, 'error', `picker-inspect-error:${activeSessionId}`) } }
+  const stopInspection = async () => { if (!activeSessionId) return; try { await api(`/editor-picker/sessions/${activeSessionId}/inspect/cancel`, { method: 'POST' }); update({ result: undefined, status: 'Browser ready' }) } catch (error) { notify((error as Error).message, 'error', `picker-cancel-error:${activeSessionId}`) } }
   const pickAgain = async () => {
     if (!activeSessionId) return
     try {
       await api(`/editor-picker/sessions/${activeSessionId}/inspect/cancel`, { method: 'POST' })
       update({ result: undefined, status: 'Starting selection', notice: undefined })
       await api(`/editor-picker/sessions/${activeSessionId}/inspect`, { method: 'POST' })
-    } catch (error) { update({ status: (error as Error).message }) }
+    } catch (error) { notify((error as Error).message, 'error', `picker-restart-error:${activeSessionId}`) }
   }
   const cancel = async () => {
     if (!activeSessionId) return
     try {
       const inspecting = status === 'Select an element'
       if (inspecting) await stopInspection()
-    } catch (error) { update({ status: (error as Error).message }) }
+    } catch (error) { notify((error as Error).message, 'error', `picker-cancel-error:${activeSessionId}`) }
+  }
+  const pickFromPreview = async () => {
+    if (!preview || preview.state !== 'inspection_ready') return
+    try {
+      const started = await api<{ pick_request_id: string }>(`/workflow-previews/${preview.runId}/inspection/pick`, { method: 'POST', body: JSON.stringify({ client_id: clientId, node_id: nodeId, field_path: field }) })
+      setPreviewRequestId(started.pick_request_id)
+    } catch (error) { notify((error as Error).message, 'error', `preview-picker-start-error:${preview.runId}:${nodeId}:${field}`) }
+  }
+  const cancelPreviewPick = async () => {
+    if (!preview || !previewRequestId) return
+    const requestId = previewRequestId
+    try {
+      await api(`/workflow-previews/${preview.runId}/inspection/cancel`, { method: 'POST', body: JSON.stringify({ pick_request_id: requestId }) })
+      setPreviewRequestId(undefined)
+      notify('Element picking cancelled.', 'info', `preview-picker-cancelled:${requestId}`)
+    } catch (error) { notify((error as Error).message, 'error', `preview-picker-cancel-error:${requestId}`) }
   }
 
   const pickDisabled = Boolean(readinessReason)
@@ -289,16 +320,17 @@ function PickerControls({ nodeId: _nodeId, field, disabled, clientId: _clientId,
     try {
       update({ sessionId: reusableSession.sessionId, status: 'Starting selection', requestedUrl: reusableSession.requestedUrl, result: undefined })
       await api(`/editor-picker/sessions/${reusableSession.sessionId}/inspect`, { method: 'POST' })
-    } catch (error) { update({ status: (error as Error).message }) }
+    } catch (error) { notify((error as Error).message, 'error', `picker-start-error:${reusableSession.sessionId}`) }
   }}>Pick</button>
 
   return <>
     <span className="picker-inline-control" aria-label={`Element picker for ${field}`}>
       {pickButton}
+      {preview && <button type="button" disabled={disabled || !agentConnected || preview.state !== 'inspection_ready' || Boolean(previewRequestId)} title={preview.state === 'inspection_ready' ? 'Pick from the successful preview browser' : 'Preview browser is not ready'} onClick={() => { void pickFromPreview() }}>Pick from preview</button>}
+      {previewRequestId && <><button type="button" title="Cancel element picking in the preview browser" onClick={() => { void cancelPreviewPick() }}>Cancel</button><span className="picker-status preview-picker-status" role="status">Select an element</span></>}
       {status === 'Select an element' && <button type="button" title="Cancel element picking" onClick={cancel}>Cancel</button>}
       {status !== 'Browser ready' && <span className={status.toLowerCase().includes('accepted') ? 'valid picker-status' : 'picker-status'} role="status">{status}</span>}
     </span>
-    {currentDraft.notice && <p className="error picker-notice">{currentDraft.notice}</p>}
     {result && <div className="picker-preview">
       <h4>Selected element</h4>
       <p className="picker-element-summary"><code>&lt;{result.element?.tag_name ?? 'element'}&gt;</code>{result.element?.role ? ` · ${result.element.role}` : ''}{result.element?.text ? ` · “${result.element.text}”` : ''}</p>
@@ -307,7 +339,7 @@ function PickerControls({ nodeId: _nodeId, field, disabled, clientId: _clientId,
       <p className={result.validation?.matches_selected_element ? 'valid' : 'error'}>{result.validation?.matches_selected_element ? `Validated · ${result.validation?.match_count ?? '?'} match` : 'Could not validate this locator'}</p>
       <details><summary>Technical locator details</summary><pre>{JSON.stringify(result.locator, null, 2)}</pre></details>
       {!!result.fallback_locators?.length && <details><summary>{result.fallback_locators.length} fallback locator{result.fallback_locators.length === 1 ? '' : 's'}</summary><ul>{result.fallback_locators.map((locator, index) => <li key={index}>{describeLocator(locator)}<details><summary>Details</summary><pre>{JSON.stringify(locator, null, 2)}</pre></details></li>)}</ul></details>}
-      <div className="picker-actions"><button type="button" disabled={disabled || !result.validation?.matches_selected_element} onClick={async () => { if (!activeSessionId) return; try { await api(`/editor-picker/sessions/${activeSessionId}/complete`, { method: 'POST' }); onAccept(result.locator); onSessionChange?.({ sessionId: activeSessionId, status: 'Browser ready', requestedUrl }); update({ status: 'Locator accepted. Browser remains open for another node.', sessionId: undefined, result: undefined }) } catch (error) { update({ status: (error as Error).message }) } }}>Accept locator</button><button type="button" disabled={disabled || !agentConnected} onClick={() => { void pickAgain() }}>Pick Again</button></div>
+      <div className="picker-actions"><button type="button" disabled={disabled || !result.validation?.matches_selected_element} onClick={async () => { if (!activeSessionId) return; try { await api(`/editor-picker/sessions/${activeSessionId}/complete`, { method: 'POST' }); onAccept(result.locator); onSessionChange?.({ sessionId: activeSessionId, status: 'Browser ready', requestedUrl }); update({ status: 'Browser ready', sessionId: undefined, result: undefined }); notify('Locator accepted. Browser remains open for another node.', 'success', `locator-accepted:${activeSessionId}:${nodeId}:${field}`) } catch (error) { notify((error as Error).message, 'error', `picker-complete-error:${activeSessionId}`) } }}>Accept locator</button><button type="button" disabled={disabled || !agentConnected} onClick={() => { void pickAgain() }}>Pick Again</button></div>
     </div>}
   </>
 }
@@ -389,6 +421,8 @@ export function Inspector({ node, stepType, readOnly, onChange, picker }: Props)
       field: fieldPath,
       clientId: picker.clientId,
       agentConnected: picker.agentConnected,
+      preview: picker.preview,
+      notify: picker.notify ?? ignoreNotification,
       event: picker.event,
       draft: picker.drafts?.[draftKey],
       session: picker.session,
@@ -397,7 +431,6 @@ export function Inspector({ node, stepType, readOnly, onChange, picker }: Props)
       onAccept: onAccept ?? ((locator) => changeArg(fieldPath, locator)),
     }
   }
-
   return (
     <aside className="inspector">
       <h2>{stepType?.name ?? node.data.step_type}</h2>

@@ -10,7 +10,8 @@ from websockets.exceptions import ConnectionClosed, InvalidStatus
 
 from .protocol import parse_command
 from .session import AgentSession
-from .preview import LocalPreviewExecutor
+from .preview import LocalPreviewExecutor, PreviewError
+from .selection import SelectionCoordinator
 from .storage import clear_device_token, load_device_token, save_device_token
 
 
@@ -19,6 +20,7 @@ class AgentConnection:
         self.server, self.token, self.pairing_code = server.rstrip("/"), token, pairing_code
         self.sessions: dict[str, AgentSession] = {}
         self.previews: dict[str, LocalPreviewExecutor] = {}
+        self.selection = SelectionCoordinator()
         self.socket = None
 
     async def emit(self, event_type: str, session_id: str | None, payload: dict) -> None:
@@ -108,7 +110,10 @@ class AgentConnection:
             allowed = {"goto_url", "click", "fill_input", "select_option", "wait_for_element", "wait_timeout", "verify_element", "assert_url_not_equal", "assert_text_visible", "ticket_create_new_ticket", "ticket_fill_fields", "__if__", "__loop__"}
             if not steps or any(not isinstance(step, dict) or str(step.get("type", "")) not in allowed for step in steps) or not any(str(step.get("id", "")) == payload["target_node_id"] for step in steps):
                 raise ValueError("Unsupported preview plan")
-            preview = LocalPreviewExecutor(message.session_id, run_id, str(payload.get("target_node_id", "")), steps, payload["inputs"], bool(payload.get("keep_browser_open", True)), self.emit)
+            for existing in list(self.previews.values()):
+                await existing.close("replaced")
+            self.previews.clear()
+            preview = LocalPreviewExecutor(message.session_id, run_id, str(payload.get("target_node_id", "")), steps, payload["inputs"], self.selection, self.emit, lambda session_id=message.session_id: self.previews.pop(session_id or "", None))
             self.previews[message.session_id] = preview
             asyncio.create_task(self._run_preview(preview))
             return
@@ -125,11 +130,38 @@ class AgentConnection:
             await preview.close()
             self.previews.pop(preview.session_id, None)
             return
+        if message.type == "preview.inspection.pick.start":
+            preview = self.previews.get(message.session_id or "")
+            request_id = message.payload.get("pick_request_id")
+            if preview is None or not isinstance(request_id, str) or not request_id or len(request_id) > 100:
+                raise ValueError("Invalid preview pick request")
+            try:
+                await preview.start_inspection(request_id)
+            except PreviewError as exc:
+                await self.emit("preview.inspection.unavailable", preview.session_id, {"run_id": preview.run_id, "pick_request_id": request_id, "code": "inspection_unavailable", "message": str(exc)})
+            return
+        if message.type == "preview.inspection.pick.cancel":
+            preview = self.previews.get(message.session_id or "")
+            request_id = message.payload.get("pick_request_id")
+            if preview is None or not isinstance(request_id, str):
+                raise ValueError("Invalid preview pick request")
+            try:
+                await preview.cancel_inspection(request_id)
+            except PreviewError as exc:
+                await self.emit("preview.inspection.unavailable", preview.session_id, {"run_id": preview.run_id, "pick_request_id": request_id, "code": "inspection_unavailable", "message": str(exc)})
+            return
+        if message.type == "preview.inspection.close":
+            preview = self.previews.get(message.session_id or "")
+            if preview is None:
+                raise ValueError("Unknown preview session")
+            await preview.close()
+            self.previews.pop(preview.session_id, None)
+            return
         if message.type == "picker.session.requested":
             session_id = message.session_id
             if not session_id or session_id in self.sessions:
                 raise ValueError("Invalid or duplicate picker session")
-            session = AgentSession(session_id, self.emit)
+            session = AgentSession(session_id, self.emit, self.selection)
             self.sessions[session_id] = session
             try:
                 await session.open(message.payload.get("start_url"))
@@ -155,5 +187,5 @@ class AgentConnection:
 
     async def _run_preview(self, preview: LocalPreviewExecutor) -> None:
         await preview.run()
-        if not preview.keep_browser_open:
+        if preview.inspection_state != "inspection_ready":
             self.previews.pop(preview.session_id, None)

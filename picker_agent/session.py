@@ -6,15 +6,18 @@ from typing import Any, Awaitable, Callable
 from .browser_manager import BrowserManager
 from .inspector import CdpInspector, InjectedInspector
 from .locator_generator import generate_candidates, generate_xpath_candidates, redact_text
+from .selection import SelectionCoordinator
 
 
 class AgentSession:
-    def __init__(self, session_id: str, emit: Callable[[str, str, dict], Awaitable[None]]) -> None:
+    def __init__(self, session_id: str, emit: Callable[[str, str, dict], Awaitable[None]], selection: SelectionCoordinator | None = None) -> None:
         self.session_id, self.emit = session_id, emit
         self.browser = BrowserManager(on_page=self._page_changed)
         self.inspector: CdpInspector | InjectedInspector | None = None
         self.inspector_mode = "cdp"
         self.inspection_active = False
+        self.selection = selection
+        self.selection_owner = f"picker:{session_id}"
 
     async def open(self, start_url: str | None) -> None:
         await self.emit("picker.session.accepted", self.session_id, {})
@@ -25,13 +28,20 @@ class AgentSession:
     async def start_inspection(self) -> None:
         if not self.inspector:
             raise RuntimeError("Browser is not ready")
+        if self.selection and not await self.selection.acquire(self.selection_owner):
+            raise RuntimeError("Another element selection is already active")
         try:
             await self.inspector.start()
         except Exception:
             await self.inspector.stop()
             self.inspector = InjectedInspector(self.browser.context, self.browser.page, self._selected)  # type: ignore[arg-type]
             self.inspector_mode = "injected"
-            await self.inspector.start()
+            try:
+                await self.inspector.start()
+            except Exception:
+                if self.selection:
+                    self.selection.release(self.selection_owner)
+                raise
         self.inspection_active = True
         await self.emit("picker.inspect.started", self.session_id, {})
 
@@ -39,6 +49,8 @@ class AgentSession:
         self.inspection_active = False
         if self.inspector:
             await self.inspector.stop()
+        if self.selection:
+            self.selection.release(self.selection_owner)
         await self.emit("picker.inspect.cancelled", self.session_id, {})
 
     def _page_changed(self, page: Any) -> None:
@@ -66,6 +78,8 @@ class AgentSession:
         if self.inspector:
             await self.inspector.stop()
         self.inspection_active = False
+        if self.selection:
+            self.selection.release(self.selection_owner)
         page = self.browser.page
         if page is None or page.is_closed():
             await self.emit("picker.error", self.session_id, {"code": "page_closed", "message": "The picker page closed before the element could be validated"})
@@ -121,4 +135,6 @@ class AgentSession:
         return await page.locator(locator["selector"]).count()
 
     async def close(self) -> None:
+        if self.selection:
+            self.selection.release(self.selection_owner)
         await self.browser.close()

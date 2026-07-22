@@ -14,6 +14,7 @@ from app.services.permission_repository import PermissionRepository
 from app.services.picker_connection_manager import picker_connections
 from app.services.picker_session_service import picker_sessions
 from app.services.workflow_run_repository import WorkflowRunRepository
+from app.services.local_preview_service import local_previews
 
 settings = get_settings()
 web_dir = Path(__file__).resolve().parent / "web"
@@ -31,6 +32,8 @@ async def _expire_picker_sessions() -> None:
         for session in picker_sessions.expire():
             await picker_connections.send_agent(session.user_id, {"version": 1, "type": "session.close", "session_id": session.id, "payload": {}})
             await picker_connections.send_editor(session.user_id, session.client_id, {"version": 1, "type": "picker.session.updated", "session_id": session.id, "payload": {"status": "expired", "expires_at": session.expires_at.isoformat()}})
+        for preview in local_previews.expire():
+            await picker_connections.send_agent(preview.user_id, {"version": 1, "type": "preview.inspection.close", "session_id": preview.id, "payload": {"run_id": preview.run_id}})
 
 
 @app.on_event("startup")

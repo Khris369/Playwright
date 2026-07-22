@@ -11,7 +11,6 @@ class CreateLocalPreviewRequest(BaseModel):
     inputs: dict[str, Any] = Field(default_factory=dict)
     target_node_id: str = Field(min_length=1, max_length=120)
     confirm_side_effects: bool = False
-    keep_browser_open: bool = True
     client_id: str = Field(min_length=1, max_length=100)
 
 
@@ -31,3 +30,13 @@ class LocalPreviewResponse(BaseModel):
     finished_at: Any | None = None
     created_at: Any | None = None
     steps: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class PreviewInspectionPickRequest(BaseModel):
+    client_id: str = Field(min_length=1, max_length=100)
+    node_id: str = Field(min_length=1, max_length=120)
+    field_path: str = Field(min_length=1, max_length=200)
+
+
+class PreviewInspectionCancelRequest(BaseModel):
+    pick_request_id: str = Field(min_length=1, max_length=100)

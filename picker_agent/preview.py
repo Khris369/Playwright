@@ -13,6 +13,11 @@ from app.engine.contracts import (
 from app.engine.template import resolve_value
 
 from .browser_manager import BrowserManager
+from .inspector import CdpInspector, InjectedInspector
+from .selection import SelectionCoordinator
+from .selection_result import SelectionError, build_picker_result
+
+PREVIEW_INSPECTION_TTL_SECONDS = 20 * 60
 
 
 class PreviewError(RuntimeError):
@@ -66,22 +71,108 @@ class LocalPreviewExecutor:
     target_node_id: str
     steps: list[dict[str, Any]]
     inputs: dict[str, Any]
-    keep_browser_open: bool
+    selection: SelectionCoordinator
     emit: Callable[[str, str, dict[str, Any]], Awaitable[None]]
+    on_closed: Callable[[], None] | None = None
 
     def __post_init__(self) -> None:
         self.cancelled = asyncio.Event()
         self.browser = BrowserManager()
+        self.inspection_state = "running"
+        self.inspector: CdpInspector | InjectedInspector | None = None
+        self.pick_request_id: str | None = None
+        self.expiry_task: asyncio.Task | None = None
+        self.selection_owner = f"preview:{self.session_id}"
 
     async def stop(self) -> None:
         self.cancelled.set()
 
-    async def close(self) -> None:
+    async def close(self, reason: str = "closed") -> None:
+        # A page-close event can race the explicit close path.  The first
+        # caller owns cleanup; later callers must not re-run inspector/context
+        # disposal or emit duplicate terminal events.
+        if self.inspection_state == "closed":
+            return
+        if self.expiry_task:
+            self.expiry_task.cancel()
+        if self.inspector:
+            await self.inspector.stop()
+            self.inspector = None
+        self.selection.release(self.selection_owner)
+        self.inspection_state = "closed"
         await self.browser.close()
+        if self.on_closed:
+            self.on_closed()
+        try:
+            await self._emit("preview.inspection.closed", {"reason": reason})
+        except Exception:
+            # Shutdown and a manually closed socket still need local
+            # resource cleanup even when the terminal event cannot relay.
+            pass
+
+    async def start_inspection(self, request_id: str) -> None:
+        if self.inspection_state != "inspection_ready" or self.pick_request_id is not None:
+            raise PreviewError("Preview browser is not ready for picking")
+        page = self.browser.page
+        if page is None or page.is_closed():
+            await self.close()
+            raise PreviewError("Preview browser is closed")
+        if not await self.selection.acquire(self.selection_owner):
+            raise PreviewError("Another element selection is already active")
+        self.pick_request_id, self.inspection_state = request_id, "picking"
+        self.inspector = CdpInspector(page, self._selected)
+        try:
+            await self.inspector.start()
+        except Exception:
+            await self.inspector.stop()
+            self.inspector = InjectedInspector(self.browser.context, page, self._selected)  # type: ignore[arg-type]
+            try:
+                await self.inspector.start()
+            except Exception:
+                self.inspector = None
+                self.pick_request_id, self.inspection_state = None, "inspection_ready"
+                self.selection.release(self.selection_owner)
+                raise
+        await self._emit("preview.inspection.pick.started", {"pick_request_id": request_id, "url": page.url})
+
+    async def cancel_inspection(self, request_id: str) -> None:
+        if self.inspection_state != "picking" or request_id != self.pick_request_id:
+            raise PreviewError("Preview pick request is not active")
+        if self.inspector:
+            await self.inspector.stop()
+        self.inspector = None
+        self.pick_request_id, self.inspection_state = None, "inspection_ready"
+        self.selection.release(self.selection_owner)
+        await self._emit("preview.inspection.pick.cancelled", {"pick_request_id": request_id})
+
+    async def _selected(self, node: dict[str, Any]) -> None:
+        request_id = self.pick_request_id
+        if not request_id:
+            return
+        try:
+            if self.inspector:
+                await self.inspector.stop()
+            result = await build_picker_result(self.browser.page, node)
+            await self._emit("preview.inspection.pick.result", {"pick_request_id": request_id, "result": result})
+        except SelectionError as exc:
+            await self._emit("preview.inspection.unavailable", {"pick_request_id": request_id, "code": exc.code, "message": str(exc)})
+        finally:
+            self.inspector = None
+            self.pick_request_id, self.inspection_state = None, "inspection_ready"
+            self.selection.release(self.selection_owner)
+
+    async def _expire(self) -> None:
+        try:
+            await asyncio.sleep(PREVIEW_INSPECTION_TTL_SECONDS)
+            if self.inspection_state != "closed":
+                await self.close("timeout")
+        except asyncio.CancelledError:
+            return
 
     async def run(self) -> None:
         try:
             page = await self.browser.open(None)
+            page.on("close", lambda: asyncio.create_task(self.close()))
             state: dict[str, Any] = {"page": page, "current_url": ""}
             await self._emit("preview.accepted", {})
             by_id = {str(step["id"]): step for step in self.steps}
@@ -118,6 +209,9 @@ class LocalPreviewExecutor:
                     await self._emit("preview.step.completed", {"node_id": current_id, "node_type": node_type, "step_index": index, "log": log, "url": page.url})
                     if current_id == self.target_node_id:
                         await self._emit("preview.passed", {"url": page.url})
+                        self.inspection_state = "inspection_ready"
+                        self.expiry_task = asyncio.create_task(self._expire())
+                        await self._emit("preview.inspection.ready", {"url": page.url, "expires_in_seconds": PREVIEW_INSPECTION_TTL_SECONDS})
                         return
                     current_id = str(next_id) if next_id is not None else None
                 except Exception as exc:
@@ -128,10 +222,7 @@ class LocalPreviewExecutor:
         except Exception:
             await self._emit("preview.rejected", {"code": "step_failed", "message": "Unable to start local preview"})
         finally:
-            # Keep the headed preview context available for inspection after a
-            # terminal result. It is released only by preview.close, agent
-            # disconnect, or a manual browser close.
-            if not self.keep_browser_open:
+            if self.inspection_state != "inspection_ready":
                 await self.browser.close()
 
     async def _execute(self, node_type: str, raw: dict[str, Any], state: dict[str, Any]) -> str:
