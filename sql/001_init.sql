@@ -74,16 +74,21 @@ CREATE TABLE IF NOT EXISTS `workflow_runs` (
   `created_by_user_id` INT NULL,
   `status` VARCHAR(30) NOT NULL,
   `trigger_source` VARCHAR(30) NOT NULL DEFAULT 'manual',
+  `execution_mode` VARCHAR(30) NOT NULL DEFAULT 'server',
+  `target_step_id` VARCHAR(120) NULL,
+  `definition_hash` CHAR(64) NULL,
   `inputs_json` JSON NULL,
   `resolved_definition_json` JSON NULL,
   `started_at` DATETIME NULL,
   `finished_at` DATETIME NULL,
   `error_summary` TEXT NULL,
+  `error_code` VARCHAR(50) NULL,
   `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   KEY `idx_workflow_runs_version_created` (`workflow_version_id`, `created_at`),
   KEY `idx_workflow_runs_user_created` (`created_by_user_id`, `created_at`),
   KEY `idx_workflow_runs_user_status` (`created_by_user_id`, `status`, `created_at`)
+  ,KEY `idx_workflow_runs_mode_user_status` (`execution_mode`, `created_by_user_id`, `status`, `created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `workflow_step_runs` (

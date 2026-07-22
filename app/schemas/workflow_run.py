@@ -18,6 +18,10 @@ class WorkflowRunResponse(BaseModel):
     created_by_user_id: int | None = None
     status: str
     trigger_source: str
+    execution_mode: str = "server"
+    target_step_id: str | None = None
+    definition_hash: str | None = None
+    error_code: str | None = None
     inputs_json: dict[str, Any] | None = None
     resolved_definition_json: dict[str, Any] | None = None
     started_at: datetime | None = None

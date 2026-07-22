@@ -37,10 +37,18 @@ class WorkflowRunRepository:
         return run_id
 
     @staticmethod
+    def create_local_preview_run(workflow_id: int, workflow_version_id: int, user_id: int, definition: dict, inputs: dict, target_step_id: str, definition_hash: str) -> int:
+        with get_db_cursor() as (_, cursor):
+            cursor.execute("""INSERT INTO workflow_runs (workflow_id, workflow_version_id, created_by_user_id, status, trigger_source, execution_mode, target_step_id, definition_hash, inputs_json, resolved_definition_json)
+                              VALUES (%s, %s, %s, 'queued', 'editor', 'local_preview', %s, %s, %s, %s)""",
+                           (workflow_id, workflow_version_id, user_id, target_step_id, definition_hash, json.dumps(inputs), json.dumps(definition)))
+            return int(cursor.lastrowid)
+
+    @staticmethod
     def list_runs(workflow_version_id: int | None = None, limit: int = 20, user_id: int | None = None, is_admin: bool = False) -> list[dict]:
         """Return recent runs, optionally limited to one workflow version."""
         with get_db_cursor() as (_, cursor):
-            query = """SELECT id, workflow_id, workflow_version_id, status, trigger_source,
+            query = """SELECT id, workflow_id, workflow_version_id, created_by_user_id, status, trigger_source, execution_mode, target_step_id, definition_hash, error_code,
                        inputs_json, resolved_definition_json, started_at, finished_at,
                        error_summary, created_at FROM workflow_runs"""
             conditions: list[str] = []
@@ -133,7 +141,7 @@ class WorkflowRunRepository:
                 """
                 UPDATE workflow_runs
                 SET status = %s, error_summary = %s, finished_at = NOW()
-                WHERE id = %s
+                WHERE id = %s AND status NOT IN ('passed', 'failed', 'cancelled', 'agent_disconnected')
                 """,
                 (status, error_summary, run_id),
             )
@@ -158,7 +166,7 @@ class WorkflowRunRepository:
         with get_db_cursor() as (_, cursor):
             cursor.execute(
                 """
-                SELECT id, workflow_id, workflow_version_id, status, trigger_source,
+                SELECT id, workflow_id, workflow_version_id, created_by_user_id, status, trigger_source, execution_mode, target_step_id, definition_hash, error_code,
                        inputs_json, resolved_definition_json, started_at, finished_at, error_summary, created_at
                 FROM workflow_runs
                 WHERE id = %s
@@ -175,6 +183,19 @@ class WorkflowRunRepository:
                     row["resolved_definition_json"]
                 )
             return row
+
+    @staticmethod
+    def finalize_preview(run_id: int, status: str, error_code: str | None = None, error_summary: str | None = None) -> None:
+        with get_db_cursor() as (_, cursor):
+            cursor.execute("""UPDATE workflow_runs SET status = %s, error_code = %s, error_summary = %s, finished_at = NOW()
+                              WHERE id = %s AND execution_mode = 'local_preview' AND status NOT IN ('passed', 'failed', 'cancelled', 'agent_disconnected')""",
+                           (status, error_code, error_summary, run_id))
+
+    @staticmethod
+    def reconcile_local_previews() -> None:
+        with get_db_cursor() as (_, cursor):
+            cursor.execute("""UPDATE workflow_runs SET status = 'failed', error_code = 'server_restarted', error_summary = 'Preview ended because the server restarted', finished_at = NOW()
+                              WHERE execution_mode = 'local_preview' AND status IN ('queued', 'running')""")
 
     @staticmethod
     def list_step_runs(run_id: int) -> list[dict]:

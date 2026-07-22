@@ -12,10 +12,12 @@ from app.schemas.editor_picker import PickerAgentTokenResponse, PickerMessage, P
 from app.services.permission_repository import PermissionRepository
 from app.services.picker_connection_manager import picker_connections
 from app.services.picker_session_service import TERMINAL_STATES, picker_sessions
+from app.services.local_preview_service import local_previews
+from app.services.workflow_run_repository import WorkflowRunRepository
 
 router = APIRouter(prefix="/editor-picker", tags=["editor-picker"])
 
-AGENT_EVENTS = {"agent.ready", "picker.session.accepted", "browser.opened", "browser.page_changed", "picker.inspect.started", "picker.inspect.cancelled", "picker.element.selected", "picker.error", "session.closed"}
+AGENT_EVENTS = {"agent.ready", "picker.session.accepted", "browser.opened", "browser.page_changed", "picker.inspect.started", "picker.inspect.cancelled", "picker.element.selected", "picker.error", "session.closed", "preview.accepted", "preview.step.started", "preview.step.completed", "preview.step.failed", "preview.passed", "preview.target_not_reached", "preview.cancelled", "preview.rejected", "preview.failed"}
 EDITOR_EVENTS = {"editor.connect"}
 
 
@@ -191,6 +193,17 @@ async def agent_socket(websocket: WebSocket) -> None:
                 continue
             if not message.session_id:
                 raise ValueError("Session message requires session_id")
+            if message.type.startswith("preview."):
+                run_id = message.payload.get("run_id")
+                message_id = message.payload.get("message_id")
+                if not isinstance(run_id, int) or not isinstance(message_id, str) or len(message_id) > 100:
+                    raise ValueError("Invalid preview event")
+                preview = local_previews.event(message.session_id, run_id, message.type, message.payload, message_id)
+                if preview is None or preview.connection is not websocket:
+                    raise ValueError("Expired or unauthorized preview event")
+                run = WorkflowRunRepository.get_run(run_id)
+                await picker_connections.send_editor(claim.user_id, preview.client_id, {"version": 1, "type": message.type, "session_id": message.session_id, "payload": {"run_id": run_id, "status": run.get("status") if run else "failed", **message.payload}})
+                continue
             session = picker_sessions.get_owned(message.session_id, claim.user_id)
             if session is None:
                 raise ValueError("Expired or unauthorized picker session")
@@ -234,6 +247,8 @@ async def agent_socket(websocket: WebSocket) -> None:
         if picker_connections.agents.get(claim.user_id) is websocket:
             del picker_connections.agents[claim.user_id]
             picker_connections.clear_agent_info(claim.user_id)
+        for preview in local_previews.disconnect(claim.user_id, websocket):
+            await picker_connections.send_editor(claim.user_id, preview.client_id, {"version": 1, "type": "preview.failed", "session_id": preview.id, "payload": {"run_id": preview.run_id, "status": "agent_disconnected", "code": "agent_disconnected", "message": "Local preview agent disconnected"}})
         for session in picker_sessions.sessions.values():
             if session.user_id == claim.user_id and session.state not in TERMINAL_STATES:
                 session.state = "failed"

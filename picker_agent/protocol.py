@@ -4,7 +4,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-ALLOWED_COMMANDS = {"picker.session.requested", "picker.inspect.start", "picker.inspect.cancel", "session.close"}
+ALLOWED_COMMANDS = {"picker.session.requested", "picker.inspect.start", "picker.inspect.cancel", "session.close", "preview.start", "preview.stop", "preview.close"}
 
 
 class Message(BaseModel):

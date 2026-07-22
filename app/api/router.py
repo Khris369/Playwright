@@ -11,6 +11,7 @@ from app.api.routes.step_types import router as step_types_router
 from app.api.routes.templates import router as templates_router
 from app.api.routes.users import router as users_router
 from app.api.routes.workflow_runs import router as workflow_runs_router
+from app.api.routes.workflow_previews import router as workflow_previews_router
 from app.api.routes.workflows import router as workflows_router
 from app.api.routes.workflow_definitions import router as workflow_definitions_router
 
@@ -24,5 +25,6 @@ api_router.include_router(step_types_router)
 api_router.include_router(workflows_router)
 api_router.include_router(workflow_definitions_router)
 api_router.include_router(workflow_runs_router)
+api_router.include_router(workflow_previews_router)
 api_router.include_router(templates_router)
 api_router.include_router(users_router)

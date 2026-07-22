@@ -13,6 +13,7 @@ from app.services.session_repository import SESSION_COOKIE_NAME, SessionReposito
 from app.services.permission_repository import PermissionRepository
 from app.services.picker_connection_manager import picker_connections
 from app.services.picker_session_service import picker_sessions
+from app.services.workflow_run_repository import WorkflowRunRepository
 
 settings = get_settings()
 web_dir = Path(__file__).resolve().parent / "web"
@@ -36,6 +37,7 @@ async def _expire_picker_sessions() -> None:
 async def start_picker_expiry_task() -> None:
     global _picker_expiry_task
     await picker_connections.start_relay(settings.picker_redis_url)
+    WorkflowRunRepository.reconcile_local_previews()
     _picker_expiry_task = asyncio.create_task(_expire_picker_sessions())
 
 

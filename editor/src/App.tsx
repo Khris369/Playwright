@@ -130,6 +130,8 @@ export default function App() {
   const [pickerAgentConnected, setPickerAgentConnected] = useState(false)
   const [pickerAgentInfo, setPickerAgentInfo] = useState<PickerAgentInfo>()
   const [pickerEvent, setPickerEvent] = useState<{ type: string; session_id?: string; payload?: Record<string, unknown> }>()
+  const [preview, setPreview] = useState<{ id: number; preview_session_id?: string; status: string; error_code?: string; current_node_id?: string; current_url?: string }>()
+  const [keepPreviewBrowserOpen, setKeepPreviewBrowserOpen] = useState(true)
   // Picker drafts are keyed by node and locator field so unfinished selections
   // survive switching between nodes without changing workflow arguments.
   const [pickerDrafts, setPickerDrafts] = useState<Record<string, PickerDraft>>({})
@@ -314,6 +316,13 @@ export default function App() {
   }, [version?.id])
 
   useEffect(() => {
+    if (!pickerEvent?.type.startsWith('preview.') || !pickerEvent.payload) return
+    const payload = pickerEvent.payload
+    const runId = Number(payload.run_id)
+    setPreview((current) => !current || runId !== current.id ? current : { ...current, status: String(payload.status ?? current.status), error_code: typeof payload.code === 'string' ? payload.code : current.error_code, current_node_id: typeof payload.node_id === 'string' ? payload.node_id : current.current_node_id, current_url: typeof payload.url === 'string' ? payload.url : current.current_url })
+  }, [pickerEvent])
+
+  useEffect(() => {
     const beforeUnload = (event: BeforeUnloadEvent) => { if (dirty) event.preventDefault() }
     window.addEventListener('beforeunload', beforeUnload); return () => window.removeEventListener('beforeunload', beforeUnload)
   }, [dirty])
@@ -426,6 +435,23 @@ export default function App() {
       else setMessage((error as Error).message)
     }
   }
+  const startPreview = async (node: GraphNode | undefined) => {
+    if (!node || node.data.kind !== 'step' || !version || !validation.valid || !pickerAgentConnected) return
+    try {
+      const created = await api<{ id: number; preview_session_id?: string; status: string; error_code?: string }>(`/workflow-previews`, { method: 'POST', body: JSON.stringify({ workflow_version_id: version.id, definition, inputs: {}, target_node_id: node.id, confirm_side_effects: window.confirm('This preview may fill fields, click controls, or select options before the target. Continue?'), keep_browser_open: keepPreviewBrowserOpen, client_id: pickerClientId }) })
+      setPreview(created)
+      setMessage('Preview started. Later edits require a new preview.')
+    } catch (error) { setMessage((error as Error).message) }
+    closeContextMenu()
+  }
+  const stopPreview = async () => {
+    if (!preview) return
+    try { const updated = await api<{ status: string }>(`/workflow-previews/${preview.id}/stop`, { method: 'POST' }); setPreview((current) => current ? { ...current, status: updated.status } : current) } catch (error) { setMessage((error as Error).message) }
+  }
+  const closePreview = async () => {
+    if (!preview) return
+    try { await api(`/workflow-previews/${preview.id}/close`, { method: 'POST' }); setPreview(undefined) } catch (error) { setMessage((error as Error).message) }
+  }
   const togglePublished = async () => {
     if (!version) return
     const action = version.is_published ? 'unpublish' : 'publish'
@@ -488,7 +514,7 @@ export default function App() {
 {contextMenu && (
           <div className="node-context-menu" style={{ left: contextMenu.x, top: contextMenu.y }}>
             {contextMenu.kind === 'node' ? (
-              <button type="button" disabled={readOnly || contextNode?.data.kind === 'start'} onClick={() => deleteNode(contextMenu.nodeId)}>Delete node</button>
+              <><button type="button" disabled={readOnly || contextNode?.data.kind === 'start'} onClick={() => deleteNode(contextMenu.nodeId)}>Delete node</button><button type="button" disabled={readOnly || contextNode?.data.kind !== 'step' || !validation.valid || !pickerAgentConnected} onClick={() => startPreview(contextNode)}>Preview until here</button></>
             ) : (
               <button type="button" disabled={readOnly || !contextEdge} onClick={() => deleteEdge(contextMenu.edgeId)}>Delete connection</button>
             )}
@@ -498,6 +524,8 @@ export default function App() {
       </section>
       <Inspector node={selected} stepType={selectedType} readOnly={readOnly} onChange={updateSelected} picker={workflowId ? { workflowId, clientId: pickerClientId, agentConnected: pickerAgentConnected, event: pickerEvent, drafts: pickerDrafts, session: pickerSession, onSessionChange: setPickerSession, onDraftChange: (key, draft) => setPickerDrafts((current) => ({ ...current, [key]: draft })) } : undefined}/>
     </div>
+    <label className="preview-toggle"><input type="checkbox" checked={keepPreviewBrowserOpen} onChange={(event) => setKeepPreviewBrowserOpen(event.target.checked)} /> Keep preview browser open after completion</label>
+    {preview && <section className="preview-panel" aria-live="polite"><strong>Preview: {preview.status}</strong><span> Target: {preview.current_node_id ?? 'starting'}</span>{preview.current_url && <span> URL: {preview.current_url}</span>}{preview.error_code && <span> Error: {preview.error_code}</span>}{['queued', 'running'].includes(preview.status) && <button type="button" onClick={stopPreview}>Stop preview</button>}{!['queued', 'running'].includes(preview.status) && keepPreviewBrowserOpen && <button type="button" onClick={closePreview}>Close preview browser</button>}</section>}
     <section className={`bottom-panels ${jsonOpen ? 'is-expanded' : ''}`}><details open={jsonOpen} onToggle={(event) => setJsonOpen(event.currentTarget.open)}><summary>Definition JSON preview / validated import</summary><div className="json-panel-content"><textarea aria-label="Definition JSON" value={jsonImport || JSON.stringify(definition, null, 2)} onChange={(e) => setJsonImport(e.target.value)}/><button disabled={readOnly} onClick={importDefinition}>Import and validate</button></div></details></section>
   </main>
 }

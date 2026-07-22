@@ -10,6 +10,7 @@ from websockets.exceptions import ConnectionClosed, InvalidStatus
 
 from .protocol import parse_command
 from .session import AgentSession
+from .preview import LocalPreviewExecutor
 from .storage import clear_device_token, load_device_token, save_device_token
 
 
@@ -17,10 +18,11 @@ class AgentConnection:
     def __init__(self, server: str, token: str | None = None, pairing_code: str | None = None) -> None:
         self.server, self.token, self.pairing_code = server.rstrip("/"), token, pairing_code
         self.sessions: dict[str, AgentSession] = {}
+        self.previews: dict[str, LocalPreviewExecutor] = {}
         self.socket = None
 
     async def emit(self, event_type: str, session_id: str | None, payload: dict) -> None:
-        await self.socket.send(json.dumps({"version": 1, "type": event_type, "session_id": session_id, "payload": payload}))
+        await self.socket.send(json.dumps({"version": 1, "type": event_type, "session_id": session_id, "payload": {"message_id": secrets.token_urlsafe(12), **payload}}))
 
     async def run(self) -> None:
         explicit_token = self.token is not None
@@ -88,10 +90,41 @@ class AgentConnection:
             finally:
                 for session in list(self.sessions.values()):
                     await session.close()
+                for preview in list(self.previews.values()):
+                    await preview.close()
                 self.sessions.clear()
+                self.previews.clear()
 
     async def handle(self, raw: dict[str, Any]) -> None:
         message = parse_command(raw)
+        if message.type == "preview.start":
+            if not message.session_id or message.session_id in self.previews or self.previews:
+                raise ValueError("Invalid or duplicate preview session")
+            payload = message.payload
+            run_id = payload.get("run_id")
+            steps = payload.get("steps")
+            if not isinstance(run_id, int) or not isinstance(steps, list) or not isinstance(payload.get("inputs"), dict) or not isinstance(payload.get("target_node_id"), str):
+                raise ValueError("Invalid preview plan")
+            allowed = {"goto_url", "click", "fill_input", "select_option", "wait_for_element", "wait_timeout", "verify_element", "assert_url_not_equal", "assert_text_visible", "ticket_create_new_ticket", "ticket_fill_fields", "__if__", "__loop__"}
+            if not steps or any(not isinstance(step, dict) or str(step.get("type", "")) not in allowed for step in steps) or not any(str(step.get("id", "")) == payload["target_node_id"] for step in steps):
+                raise ValueError("Unsupported preview plan")
+            preview = LocalPreviewExecutor(message.session_id, run_id, str(payload.get("target_node_id", "")), steps, payload["inputs"], bool(payload.get("keep_browser_open", True)), self.emit)
+            self.previews[message.session_id] = preview
+            asyncio.create_task(self._run_preview(preview))
+            return
+        if message.type == "preview.stop":
+            preview = self.previews.get(message.session_id or "")
+            if preview is None:
+                raise ValueError("Unknown preview session")
+            await preview.stop()
+            return
+        if message.type == "preview.close":
+            preview = self.previews.get(message.session_id or "")
+            if preview is None:
+                raise ValueError("Unknown preview session")
+            await preview.close()
+            self.previews.pop(preview.session_id, None)
+            return
         if message.type == "picker.session.requested":
             session_id = message.session_id
             if not session_id or session_id in self.sessions:
@@ -119,3 +152,8 @@ class AgentConnection:
                     await self.emit("session.closed", session.session_id, {})
             except Exception:
                 await self.emit("picker.error", session.session_id, {"code": "picker_operation_failed", "message": "The local picker could not complete that operation"})
+
+    async def _run_preview(self, preview: LocalPreviewExecutor) -> None:
+        await preview.run()
+        if not preview.keep_browser_open:
+            self.previews.pop(preview.session_id, None)
