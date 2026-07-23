@@ -1,8 +1,17 @@
 import { describe, expect, it, vi } from 'vitest'
-import { arrange, blankGraph, fromDefinition, isValidConnection, linearOrder, rewireOrder, toDefinition } from './graph'
+import { arrange, blankGraph, fromDefinition, isValidConnection, linearOrder, rewireOrder, resolveHandleSide, toDefinition } from './graph'
 import type { GraphNode } from './types'
 
 describe('graph utilities', () => {
+  it('uses the nearest node to orient disconnected auto handles', () => {
+    const rightToLeft: GraphNode[] = [
+      { id: 'source', type: 'workflow', position: { x: 200, y: 0 }, data: { kind: 'step', step_type: 'wait_timeout', args: {} } },
+      { id: 'target', type: 'workflow', position: { x: 0, y: 0 }, data: { kind: 'step', step_type: 'wait_timeout', args: {} } },
+    ]
+    expect(resolveHandleSide(rightToLeft, [], rightToLeft[0], 'source')).toBe('left')
+    expect(resolveHandleSide(rightToLeft, [], rightToLeft[1], 'target')).toBe('right')
+  })
+
   it('round trips a graph and keeps stable node ids', () => {
     vi.stubGlobal('crypto', { randomUUID: () => '00000000-0000-4000-8000-000000000001' })
     const graph = blankGraph(); const definition = toDefinition(graph.nodes, graph.edges)

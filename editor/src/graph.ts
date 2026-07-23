@@ -359,7 +359,76 @@ export function removeNode(nodes: GraphNode[], edges: GraphEdge[], nodeId: strin
   return removeNodes(nodes, edges, [nodeId])
 }
 
-/** Remove graph nodes and every edge that references them. Start nodes are protected. */
+type DeletionBridge = { incoming: GraphEdge; outgoing: GraphEdge; source: string; target: string }
+
+function deletionBridges(nodes: GraphNode[], edges: GraphEdge[], nodeIds: Iterable<string>): DeletionBridge[] {
+  const requested = new Set(nodeIds)
+  const removedIds = new Set(nodes
+    .filter((node) => requested.has(node.id) && node.data.kind !== 'start')
+    .map((node) => node.id))
+  if (!removedIds.size) return []
+
+  const removedNodes = new Map(nodes.filter((node) => removedIds.has(node.id)).map((node) => [node.id, node]))
+  const internal = edges.filter((edge) => removedIds.has(edge.source) && removedIds.has(edge.target))
+  const neighbours = new Map<string, Set<string>>()
+  for (const id of removedIds) neighbours.set(id, new Set())
+  for (const edge of internal) {
+    neighbours.get(edge.source)!.add(edge.target)
+    neighbours.get(edge.target)!.add(edge.source)
+  }
+
+  const components: string[][] = []
+  const seen = new Set<string>()
+  for (const id of removedIds) {
+    if (seen.has(id)) continue
+    const component: string[] = []
+    const pending = [id]
+    seen.add(id)
+    while (pending.length) {
+      const current = pending.pop()!
+      component.push(current)
+      for (const next of neighbours.get(current) ?? []) {
+        if (!seen.has(next)) { seen.add(next); pending.push(next) }
+      }
+    }
+    components.push(component)
+  }
+
+  return components.flatMap((component) => {
+    // Controls, comments, branches, merges, and cycles are deliberately not
+    // bridged automatically. A plain step chain is the only unambiguous case.
+    if (component.some((id) => removedNodes.get(id)?.data.kind !== 'step')) return []
+    const members = new Set(component)
+    const componentEdges = internal.filter((edge) => members.has(edge.source) && members.has(edge.target))
+    const internalIncoming = new Map(component.map((id) => [id, 0]))
+    const internalOutgoing = new Map(component.map((id) => [id, 0]))
+    for (const edge of componentEdges) {
+      internalIncoming.set(edge.target, (internalIncoming.get(edge.target) ?? 0) + 1)
+      internalOutgoing.set(edge.source, (internalOutgoing.get(edge.source) ?? 0) + 1)
+    }
+    if (componentEdges.length !== component.length - 1 || [...internalIncoming.values()].some((count) => count > 1) || [...internalOutgoing.values()].some((count) => count > 1)) return []
+
+    const incoming = edges.filter((edge) => members.has(edge.target) && !members.has(edge.source))
+    const outgoing = edges.filter((edge) => members.has(edge.source) && !members.has(edge.target))
+    if (incoming.length !== 1 || outgoing.length !== 1) return []
+    const [incomingEdge] = incoming
+    const [outgoingEdge] = outgoing
+    if (incomingEdge.source === outgoingEdge.target || edges.some((edge) => edge.source === incomingEdge.source && edge.target === outgoingEdge.target && !members.has(edge.source) && !members.has(edge.target))) return []
+    return [{ incoming: incomingEdge, outgoing: outgoingEdge, source: incomingEdge.source, target: outgoingEdge.target }]
+  })
+}
+
+export function deletionReplacementSlots(nodes: GraphNode[], edges: GraphEdge[], nodeIds: Iterable<string>): DeletionBridge[] {
+  return deletionBridges(nodes, edges, nodeIds)
+}
+
+export function splitEdgeWithNode(edges: GraphEdge[], edge: GraphEdge, nodeId: string, incomingData = edge.data, outgoingData?: GraphEdge['data']): GraphEdge[] {
+  return edges.flatMap((item) => item.id === edge.id
+    ? [{ id: uid(), source: edge.source, target: nodeId, data: incomingData }, { id: uid(), source: nodeId, target: edge.target, data: outgoingData }]
+    : [item])
+}
+
+/** Remove graph nodes and incident edges, bridging only unambiguous step chains. */
 export function removeNodes(nodes: GraphNode[], edges: GraphEdge[], nodeIds: Iterable<string>): { nodes: GraphNode[]; edges: GraphEdge[] } {
   const requested = new Set(nodeIds)
   const removedIds = new Set(nodes
@@ -368,9 +437,19 @@ export function removeNodes(nodes: GraphNode[], edges: GraphEdge[], nodeIds: Ite
 
   if (!removedIds.size) return { nodes, edges }
 
+  const bridges = deletionBridges(nodes, edges, removedIds)
+  const bridgeByIncomingId = new Map(bridges.map((bridge) => [bridge.incoming.id, bridge]))
+  const nextEdges = edges.flatMap((edge) => {
+    if (removedIds.has(edge.source) || removedIds.has(edge.target)) {
+      const bridge = bridgeByIncomingId.get(edge.id)
+      return bridge ? [{ id: uid(), source: bridge.source, target: bridge.target, data: bridge.incoming.data ?? bridge.outgoing.data }] : []
+    }
+    return [edge]
+  })
+
   return {
     nodes: nodes.filter((node) => !removedIds.has(node.id)),
-    edges: edges.filter((edge) => !removedIds.has(edge.source) && !removedIds.has(edge.target)),
+    edges: nextEdges,
   }
 }
 
@@ -442,6 +521,12 @@ export function resolveHandleSide(
     }
     return inferSide(node.position, center)
   }
+
+  const nearestNode = nodes
+    .filter((candidate) => candidate.id !== node.id && candidate.data.kind !== 'comment')
+    .map((candidate) => ({ candidate, distance: Math.hypot(candidate.position.x - node.position.x, candidate.position.y - node.position.y) }))
+    .sort((a, b) => a.distance - b.distance || a.candidate.id.localeCompare(b.candidate.id))[0]?.candidate
+  if (nearestNode) return inferSide(node.position, nearestNode.position)
 
   if (kind === 'source') return node.data.kind === 'start' ? 'right' : 'right'
   if (kind === 'target') return node.data.kind === 'start' ? undefined : 'left'

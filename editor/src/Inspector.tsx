@@ -121,6 +121,15 @@ function normalizeLocatorTarget(value: LocatorValue, strategy: LocatorStrategy):
 function ConnectionSideFields({ node, readOnly, onChange }: { node: GraphNode; readOnly: boolean; onChange: (data: GraphNode['data']) => void }) {
   if (node.data.kind === 'comment') return null
 
+  const incoming = node.data.target_handle
+  const outgoing = node.data.source_handle
+  const customized = Boolean(incoming || outgoing)
+  const [expanded, setExpanded] = useState(false)
+
+  useEffect(() => {
+    setExpanded(false)
+  }, [node.id])
+
   const setSide = (key: 'source_handle' | 'target_handle', side: string) => {
     onChange({
       ...node.data,
@@ -128,34 +137,60 @@ function ConnectionSideFields({ node, readOnly, onChange }: { node: GraphNode; r
     })
   }
 
+  const resetToAuto = () => onChange({
+    ...node.data,
+    source_handle: undefined,
+    target_handle: undefined,
+  })
+
+  const summary = !customized
+    ? 'Auto'
+    : [incoming && `In: ${incoming[0].toUpperCase()}${incoming.slice(1)}`, outgoing && `Out: ${outgoing[0].toUpperCase()}${outgoing.slice(1)}`]
+      .filter(Boolean)
+      .join(' · ')
+
   return (
-    <fieldset className="connection-side-editor">
-      <legend>Connection sides</legend>
-      <label>
-        Outgoing side
-        <Help text="Auto chooses a side based on the connected nodes. Manual overrides keep the chosen side." />
-        <select
-          disabled={readOnly}
-          value={node.data.source_handle ?? ''}
-          onChange={(e) => setSide('source_handle', e.target.value)}
-        >
-          {HANDLE_OPTIONS.map((option) => <option key={option.label} value={option.value ?? ''}>{option.label}</option>)}
-        </select>
-      </label>
-      {node.data.kind !== 'start' && (
+    <section className="connection-side-editor" aria-label="Connection routing">
+      <button
+        type="button"
+        className="connection-side-header"
+        aria-expanded={expanded}
+        aria-controls={`connection-routing-${node.id}`}
+        onClick={() => setExpanded((open) => !open)}
+      >
+        <span className="connection-side-title"><span aria-hidden="true" className="connection-side-chevron">{expanded ? '▾' : '▸'}</span>Connection routing</span>
+        <span className="connection-side-summary" title={summary}>{summary}</span>
+      </button>
+      {expanded && <div id={`connection-routing-${node.id}`} className="connection-side-fields">
         <label>
-          Incoming side
+          Outgoing
+          <Help text="Auto chooses a side based on the connected nodes. Manual overrides keep the chosen side." />
+          <select
+            aria-label="Outgoing"
+            disabled={readOnly}
+            value={outgoing ?? ''}
+            onChange={(e) => setSide('source_handle', e.target.value)}
+          >
+            {HANDLE_OPTIONS.map((option) => <option key={option.label} value={option.value ?? ''}>{option.label}</option>)}
+          </select>
+        </label>
+        {node.data.kind !== 'start' && (
+        <label>
+          Incoming
           <Help text="Auto chooses the side from the position of the upstream node." />
           <select
+            aria-label="Incoming"
             disabled={readOnly}
-            value={node.data.target_handle ?? ''}
+            value={incoming ?? ''}
             onChange={(e) => setSide('target_handle', e.target.value)}
           >
             {HANDLE_OPTIONS.map((option) => <option key={option.label} value={option.value ?? ''}>{option.label}</option>)}
           </select>
         </label>
-      )}
-    </fieldset>
+        )}
+        {customized && <button type="button" className="connection-side-reset" disabled={readOnly} onClick={resetToAuto}>Reset to Auto</button>}
+      </div>}
+    </section>
   )
 }
 
@@ -435,7 +470,6 @@ export function Inspector({ node, stepType, readOnly, onChange, picker }: Props)
     <aside className="inspector">
       <h2>{stepType?.name ?? node.data.step_type}</h2>
       <p>{stepType?.description}</p>
-      <ConnectionSideFields node={node} readOnly={readOnly} onChange={onChange} />
       {fields.map((field) => (
         <div className="argument-field" key={field.path}><label>
           {getFieldLabel(stepType, field.path)}
@@ -443,6 +477,7 @@ export function Inspector({ node, stepType, readOnly, onChange, picker }: Props)
           {isSecondsTimeoutField(field.path) && <small className="field-hint">Displayed in seconds, stored as milliseconds.</small>}
         </label>{supportsRunInput(stepType, field.path, field.widget, args[field.path]) && <div className="run-input-control"><label className="inline-field"><input disabled={readOnly} type="checkbox" checked={Boolean(getRunInputKey(args[field.path]))} onChange={(event) => changeArg(field.path, event.target.checked ? `{{ inputs.${field.path} }}` : structuredClone(stepType?.default_args[field.path] ?? ''))} /> Use run input</label>{getRunInputKey(args[field.path]) && <label>Input name<input disabled={readOnly} value={getRunInputKey(args[field.path])} onChange={(event) => { const key = event.target.value.replace(/[^a-zA-Z0-9_.]/g, ''); changeArg(field.path, `{{ inputs.${key || field.path} }}`) }} /></label>}</div>}</div>
       ))}
+      <ConnectionSideFields node={node} readOnly={readOnly} onChange={onChange} />
       <details>
         <summary>Advanced arguments JSON</summary>
         <textarea aria-label="Advanced arguments JSON" disabled={readOnly} value={advanced} onChange={(e) => setAdvanced(e.target.value)} />

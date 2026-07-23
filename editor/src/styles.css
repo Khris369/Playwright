@@ -795,6 +795,65 @@ header h1 {
     }
 }
 
+.connection-side-editor {
+    margin: 14px 0 0;
+    border-top: 1px solid #e7ebf2;
+    padding-top: 8px;
+}
+
+.connection-side-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    width: 100%;
+    padding: 3px 0;
+    border: 0;
+    background: transparent;
+    color: #344054;
+    font: inherit;
+    font-size: 12px;
+    font-weight: 700;
+    text-align: left;
+    cursor: pointer;
+}
+
+.connection-side-title {
+    min-width: 0;
+}
+
+.connection-side-chevron {
+    display: inline-block;
+    width: 14px;
+    color: #667085;
+}
+
+.connection-side-summary {
+    min-width: 0;
+    overflow: hidden;
+    color: #667085;
+    font-size: 11px;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.connection-side-fields {
+    padding-top: 2px;
+}
+
+.connection-side-reset {
+    margin: 0 0 4px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: #475467;
+    font: inherit;
+    font-size: 11px;
+    text-decoration: underline;
+    cursor: pointer;
+}
+
 .assistant-drawer {
     position: fixed;
     z-index: 70;

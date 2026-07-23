@@ -1,13 +1,74 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
+import { ReactFlowProvider } from '@xyflow/react'
 import { Palette } from './Palette'
 import { Inspector } from './Inspector'
 import { AgentPairingControl } from './App'
+import { WorkflowNode } from './WorkflowNode'
 import type { GraphNode, StepType } from './types'
 
 const step: StepType = { key: 'wait_timeout', name: 'Wait timeout', category: 'Wait', description: 'Bounded wait', default_args: { timeout_ms: 1000 }, args_schema: {}, editor_schema: { fields: [{ path: 'timeout_ms', widget: 'text' }] } }
 
+function routingNode(data: Partial<GraphNode['data']> = {}): GraphNode {
+  return { id: 'routing-node', type: 'workflow', position: { x: 0, y: 0 }, data: { kind: 'step', step_type: 'wait_timeout', args: { timeout_ms: 1000 }, ...data } }
+}
+
 describe('editor components', () => {
+  it('keeps incoming and outgoing handles mounted for a disconnected step', () => {
+    const node = routingNode()
+    const view = render(<ReactFlowProvider><WorkflowNode id={node.id} data={node.data} selected={false} type="workflow" dragging={false} zIndex={0} draggable selectable deletable isConnectable positionAbsoluteX={0} positionAbsoluteY={0} /></ReactFlowProvider>)
+    expect(view.container.querySelector('.workflow-handle-target-left')).toBeInTheDocument()
+    expect(view.container.querySelector('.workflow-handle-source-right')).toBeInTheDocument()
+  })
+
+  it('moves configured handles without unmounting them', () => {
+    const node = routingNode()
+    const view = render(<ReactFlowProvider><WorkflowNode id={node.id} data={node.data} selected={false} type="workflow" dragging={false} zIndex={0} draggable selectable deletable isConnectable positionAbsoluteX={0} positionAbsoluteY={0} /></ReactFlowProvider>)
+    view.rerender(<ReactFlowProvider><WorkflowNode id={node.id} data={{ ...node.data, source_handle: 'top', target_handle: 'bottom' }} selected={false} type="workflow" dragging={false} zIndex={0} draggable selectable deletable isConnectable positionAbsoluteX={0} positionAbsoluteY={0} /></ReactFlowProvider>)
+    expect(view.container.querySelector('.workflow-handle-target-bottom')).toBeInTheDocument()
+    expect(view.container.querySelector('.workflow-handle-source-top')).toBeInTheDocument()
+  })
+
+  it('keeps specialised start and comment handle behaviour', () => {
+    const start = routingNode({ kind: 'start' })
+    const comment = routingNode({ kind: 'comment', text: 'Note' })
+    const view = render(<ReactFlowProvider><WorkflowNode id={start.id} data={start.data} selected={false} type="workflow" dragging={false} zIndex={0} draggable selectable deletable isConnectable positionAbsoluteX={0} positionAbsoluteY={0} /><WorkflowNode id={comment.id} data={comment.data} selected={false} type="workflow" dragging={false} zIndex={0} draggable selectable deletable isConnectable positionAbsoluteX={0} positionAbsoluteY={0} /></ReactFlowProvider>)
+    expect(view.container.querySelector('.workflow-handle-target-left')).not.toBeInTheDocument()
+    expect(view.container.querySelector('.workflow-handle-source-right')).toBeInTheDocument()
+    expect(view.container.querySelectorAll('.workflow-handle')).toHaveLength(1)
+  })
+
+  it('collapses connection routing by default when both sides are Auto', () => {
+    render(<Inspector node={routingNode()} stepType={step} readOnly={false} onChange={() => undefined} />)
+    expect(screen.getByRole('button', { name: /Connection routing/ })).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByLabelText('Incoming')).not.toBeInTheDocument()
+  })
+
+  it('expands routing controls, resets both values, and preserves manual values', () => {
+    const change = vi.fn()
+    const node = routingNode({ source_handle: 'top', target_handle: 'bottom' })
+    const view = render(<Inspector node={node} stepType={step} readOnly={false} onChange={change} />)
+    const toggle = screen.getByRole('button', { name: /Connection routing/ })
+    expect(toggle).toHaveTextContent('In: Bottom · Out: Top')
+    fireEvent.click(toggle)
+    expect(screen.getByLabelText('Incoming')).toHaveValue('bottom')
+    expect(screen.getByLabelText('Outgoing')).toHaveValue('top')
+    fireEvent.click(toggle)
+    fireEvent.click(toggle)
+    expect(screen.getByLabelText('Incoming')).toHaveValue('bottom')
+    expect(screen.getByLabelText('Outgoing')).toHaveValue('top')
+    fireEvent.click(screen.getByRole('button', { name: 'Reset to Auto' }))
+    expect(change).toHaveBeenLastCalledWith(expect.objectContaining({ source_handle: undefined, target_handle: undefined }))
+    view.unmount()
+  })
+
+  it('keeps routing controls disabled for read-only workflows', () => {
+    render(<Inspector node={routingNode({ source_handle: 'top' })} stepType={step} readOnly onChange={() => undefined} />)
+    fireEvent.click(screen.getByRole('button', { name: /Connection routing/ }))
+    expect(screen.getByLabelText('Incoming')).toBeDisabled()
+    expect(screen.getByLabelText('Outgoing')).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Reset to Auto' })).toBeDisabled()
+  })
   it('opens and closes the global agent status popover', () => {
     render(<AgentPairingControl connected={false} />)
     const trigger = screen.getByRole('button', { name: 'Local picker agent status' })

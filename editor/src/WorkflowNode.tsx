@@ -9,9 +9,9 @@ const sideToPosition: Record<HandleSide, Position> = {
   left: Position.Left,
 }
 
-function renderHandle(kind: 'source' | 'target', side: HandleSide | undefined) {
-  if (!side) return null
-  return <Handle className={`workflow-handle workflow-handle-${kind}-${side}`} id={`${kind}-${side}`} type={kind} position={sideToPosition[side]} />
+function renderHandle(kind: 'source' | 'target', side: HandleSide | undefined, isConnectable: boolean) {
+  const resolvedSide = side ?? (kind === 'source' ? 'right' : 'left')
+  return <Handle className={`workflow-handle workflow-handle-${kind}-${resolvedSide}`} id={`${kind}-${resolvedSide}`} type={kind} position={sideToPosition[resolvedSide]} isConnectable={isConnectable} />
 }
 
 const stateLabels: Record<string, string> = {
@@ -35,18 +35,19 @@ function stepSummary(stepType: string | undefined, args: Record<string, unknown>
   return `${targetSummary(args)} · ${stepType === 'verify_element' ? 'Expected' : 'Until'}: ${stateLabels[state] ?? state}${timeout ? ` · ${timeout}` : ''}`
 }
 
-export function WorkflowNode({ id, data, selected }: NodeProps<GraphNode>) {
+export function WorkflowNode({ id, data, selected, isConnectable }: NodeProps<GraphNode>) {
   const updateNodeInternals = useUpdateNodeInternals()
+  const canConnect = isConnectable !== false
   const summary = data.kind === 'step' ? stepSummary(data.step_type, data.args ?? {}) : data.text ?? ''
 
   useEffect(() => {
     updateNodeInternals(id)
-  }, [data.source_handle, data.target_handle, id, updateNodeInternals])
+  }, [data, id, updateNodeInternals])
 
   return (
     <div className={`workflow-node ${selected || data.sequenceSelected ? 'selected' : ''} ${data.errors?.length ? 'invalid' : ''} ${data.runState ?? ''}`}>
-      {data.kind !== 'comment' && renderHandle('target', data.target_handle)}
-      {data.kind === 'if' ? <><Handle id="true" type="source" position={Position.Right} style={{ top: '35%' }} /><Handle id="false" type="source" position={Position.Right} style={{ top: '70%' }} /></> : data.kind === 'loop' ? <><Handle id="body" type="source" position={Position.Right} style={{ top: '35%' }} /><Handle id="done" type="source" position={Position.Right} style={{ top: '70%' }} /></> : data.kind !== 'comment' && renderHandle('source', data.source_handle)}
+      {data.kind !== 'comment' && data.kind !== 'start' && renderHandle('target', data.target_handle, canConnect)}
+      {data.kind === 'if' ? <><Handle id="true" type="source" position={Position.Right} style={{ top: '35%' }} isConnectable={canConnect} /><Handle id="false" type="source" position={Position.Right} style={{ top: '70%' }} isConnectable={canConnect} /></> : data.kind === 'loop' ? <><Handle id="body" type="source" position={Position.Right} style={{ top: '35%' }} isConnectable={canConnect} /><Handle id="done" type="source" position={Position.Right} style={{ top: '70%' }} isConnectable={canConnect} /></> : data.kind !== 'comment' && renderHandle('source', data.source_handle, canConnect)}
       <div className="node-kind">{data.kind}</div>
       <strong>{data.kind === 'start' ? 'Start' : data.kind === 'comment' ? 'Comment' : data.title ?? data.step_type}</strong>
       {data.kind === 'if' && <small>TRUE / FALSE</small>}

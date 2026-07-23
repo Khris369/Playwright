@@ -5,7 +5,7 @@ import {
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { api, ApiError } from './api'
-import { arrange, blankGraph, fromDefinition, isValidConnection, linearOrder, removeNode, removeNodes, replacementEdgesForNode, rewireOrder, resolveHandleSide, toDefinition, uid, type ArrangeMode, type NodeDimensions } from './graph'
+import { arrange, blankGraph, deletionReplacementSlots, fromDefinition, isValidConnection, linearOrder, removeNode, removeNodes, rewireOrder, resolveHandleSide, splitEdgeWithNode, toDefinition, uid, type ArrangeMode, type NodeDimensions } from './graph'
 import { spawnNodePosition } from './spawn'
 import { Inspector, type PickerDraft, type PickerSession } from './Inspector'
 import { Palette } from './Palette'
@@ -263,13 +263,13 @@ export default function App() {
 
   const deleteNode = useCallback((nodeId: string) => {
     if (readOnly) return
-    const replacement = replacementEdgesForNode(nodes, edges, nodeId)
+    const replacement = deletionReplacementSlots(nodes, edges, [nodeId])[0]
     const next = removeNode(nodes, edges, nodeId)
     if (next.nodes === nodes && next.edges === edges) return
     commit(next.nodes, next.edges)
     setReplacementSlot(replacement && {
-      source: replacement.incoming.source,
-      target: replacement.outgoing.target,
+      source: replacement.source,
+      target: replacement.target,
       incomingData: replacement.incoming.data,
       outgoingData: replacement.outgoing.data,
     })
@@ -353,10 +353,10 @@ export default function App() {
       // incident edges here as well, otherwise dangling edges corrupt handle state.
       checkpoint()
       setEdges(removed.edges)
-      const replacement = removeIds.length === 1 ? replacementEdgesForNode(nodes, edges, removeIds[0]) : undefined
+      const replacement = deletionReplacementSlots(nodes, edges, removeIds)[0]
       setReplacementSlot(replacement && {
-        source: replacement.incoming.source,
-        target: replacement.outgoing.target,
+        source: replacement.source,
+        target: replacement.target,
         incomingData: replacement.incoming.data,
         outgoingData: replacement.outgoing.data,
       })
@@ -388,14 +388,15 @@ export default function App() {
     const executable = nodes.filter((node) => node.data.kind !== 'comment')
     const slotSource = replacementSlot && nodes.find((node) => node.id === replacementSlot.source)
     const slotTarget = replacementSlot && nodes.find((node) => node.id === replacementSlot.target)
-    const canReplace = Boolean(replacementSlot && slotSource && slotTarget && !edges.some((edge) => edge.source === replacementSlot.source || edge.target === replacementSlot.target))
+    const preservedEdge = replacementSlot && edges.find((edge) => edge.source === replacementSlot.source && edge.target === replacementSlot.target)
+    const canReplace = Boolean(replacementSlot && slotSource && slotTarget && preservedEdge)
     const position = canReplace && slotSource && slotTarget
       ? { x: (slotSource.position.x + slotTarget.position.x) / 2, y: (slotSource.position.y + slotTarget.position.y) / 2 }
       : spawnNodePosition(nodes, getCanvasCenter())
     const node: GraphNode = { id: uid(), type: 'workflow', position, data: { kind: 'step', step_type: step.key, args: structuredClone(step.default_args), title: step.name } }
     const targets = new Set(edges.map((edge) => edge.target)); const tail = executable.find((item) => !edges.some((edge) => edge.source === item.id) && targets.has(item.id)) ?? executable.at(-1)
-    const nextEdges = canReplace && replacementSlot
-      ? [...edges, { id: uid(), source: replacementSlot.source, target: node.id, data: replacementSlot.incomingData }, { id: uid(), source: node.id, target: replacementSlot.target, data: replacementSlot.outgoingData }]
+    const nextEdges = canReplace && replacementSlot && preservedEdge
+      ? splitEdgeWithNode(edges, preservedEdge, node.id, replacementSlot.incomingData, replacementSlot.outgoingData)
       : tail ? [...edges, { id: uid(), source: tail.id, target: node.id }] : edges
     commit([...nodes, node], nextEdges); setReplacementSlot(undefined); setSelectedId(node.id)
   }
@@ -540,6 +541,7 @@ export default function App() {
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
+          nodesConnectable={!readOnly}
           isValidConnection={isValidConnection}
           onReconnectStart={() => { reconnectSucceeded.current = false }}
           onReconnect={onReconnect}
