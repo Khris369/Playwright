@@ -5,7 +5,7 @@ import {
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { api, ApiError } from './api'
-import { arrange, blankGraph, fromDefinition, isValidConnection, linearOrder, removeNode, removeNodes, replacementEdgesForNode, rewireOrder, resolveHandleSide, toDefinition, uid } from './graph'
+import { arrange, blankGraph, fromDefinition, isValidConnection, linearOrder, removeNode, removeNodes, replacementEdgesForNode, rewireOrder, resolveHandleSide, toDefinition, uid, type ArrangeMode, type NodeDimensions } from './graph'
 import { spawnNodePosition } from './spawn'
 import { Inspector, type PickerDraft, type PickerSession } from './Inspector'
 import { Palette } from './Palette'
@@ -112,6 +112,9 @@ export default function App() {
   const [versions, setVersions] = useState<Version[]>([])
   const [version, setVersion] = useState<Version>()
   const [selectedId, setSelectedId] = useState<string>()
+  const [selectedNodeIds, setSelectedNodeIds] = useState<Set<string>>(new Set())
+  const [arrangeColumns, setArrangeColumns] = useState(4)
+  const [arrangeSnake, setArrangeSnake] = useState(true)
   const [validation, setValidation] = useState<ValidationResult>({ valid: false, compiled_order: [], errors: [] })
   const [dirty, setDirty] = useState(false)
   const [message, setMessage] = useState('')
@@ -186,6 +189,11 @@ export default function App() {
       targetHandle: targetNode ? `target-${resolveHandleSide(nodes, edges, targetNode, 'target') ?? 'left'}` : undefined,
     }
   }), [nodes, edges])
+  const nodeDimensions = useMemo(() => new Map<string, NodeDimensions>(nodes.flatMap((node) => {
+    const width = node.measured?.width ?? node.width
+    const height = node.measured?.height ?? node.height
+    return width && height ? [[node.id, { width, height }] as const] : []
+  })), [nodes])
   const definitionKey = JSON.stringify(definition)
   const sequenceNodes = useMemo(() => {
     const ordered = linearOrder(nodes, edges)
@@ -233,8 +241,9 @@ export default function App() {
     setPast((items) => [...items.slice(-99), { nodes, edges }]); setFuture([])
   }, [nodes, edges])
   const commit = useCallback((nextNodes: GraphNode[], nextEdges: GraphEdge[] = edges) => {
+    if (nextNodes === nodes && nextEdges === edges) return
     checkpoint(); setNodes(nextNodes); setEdges(nextEdges); setDirty(true)
-  }, [checkpoint, edges])
+  }, [checkpoint, edges, nodes])
 
   const closeContextMenu = useCallback(() => setContextMenu(null), [])
 
@@ -418,6 +427,19 @@ export default function App() {
   const redo = () => { const next = future[0]; if (!next) return; setPast((items) => [...items, { nodes, edges }]); setFuture((items) => items.slice(1)); setNodes(next.nodes); setEdges(next.edges); setDirty(true) }
   const duplicate = () => { if (!selected || selected.data.kind === 'start' || readOnly) return; const copy = { ...structuredClone(selected), id: uid(), selected: false, position: { x: selected.position.x + 40, y: selected.position.y + 40 } }; commit([...nodes, copy]); setSelectedId(copy.id) }
 
+  const runArrange = (mode: ArrangeMode, targetIds = selectedNodeIds) => {
+    if (readOnly || (mode === 'selected' && targetIds.size < 2)) return
+    const arranged = arrange(nodes, edges, { mode, selectedNodeIds: targetIds, nodeDimensions, columns: arrangeColumns, snake: arrangeSnake })
+    const changed = arranged.some((node, index) => node.position.x !== nodes[index].position.x || node.position.y !== nodes[index].position.y)
+    if (changed) commit(arranged, edges)
+  }
+
+  const handleSelectionChange = useCallback(({ nodes: selectedNodes }: { nodes: GraphNode[] }) => {
+    const executableIds = selectedNodes.filter((node) => node.data.kind !== 'comment').map((node) => node.id)
+    setSelectedNodeIds((current) => current.size === executableIds.length && executableIds.every((id) => current.has(id)) ? current : new Set(executableIds))
+    setSelectedId(executableIds[0])
+  }, [])
+
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
       if (!(event.ctrlKey || event.metaKey)) return
@@ -473,16 +495,39 @@ export default function App() {
     if (index <= 0 || next <= 0 || next >= order.length) return
     ;[order[index], order[next]] = [order[next], order[index]]
     const nextEdges = rewireOrder(order)
-    commit(arrange(nodes, nextEdges), nextEdges)
+    commit(arrange(nodes, nextEdges, { mode: 'all', nodeDimensions }), nextEdges)
   }
   const importDefinition = () => {
     try { const parsed = JSON.parse(jsonImport); const graph = fromDefinition(parsed); checkpoint(); setNodes(graph.nodes.map((node) => ({ ...node, data: { ...node.data, title: stepTypes.find((item) => item.key === node.data.step_type)?.name } }))); setEdges(graph.edges); setDirty(true); notify('Imported; validation pending.', 'info', 'definition-imported') } catch (error) { notify(`Import rejected: ${(error as Error).message}`, 'warning', 'definition-import-rejected') }
   }
 
+  const arrangeControls = <>
+    <div className="toolbar-group toolbar-group-secondary">
+      <button type="button" disabled={readOnly} onClick={() => runArrange('tidy')}>Tidy layout</button>
+    </div>
+    <div className="toolbar-group toolbar-group-arrange" aria-label="Arrange all options">
+      <button type="button" disabled={readOnly} onClick={() => runArrange('selected', new Set(nodes.filter((node) => node.data.kind !== 'comment').map((node) => node.id)))}>Arrange all</button>
+      <label className="arrange-option">
+        <span>Columns</span>
+        <select aria-label="Columns per row" value={arrangeColumns} disabled={readOnly} onChange={(event) => setArrangeColumns(Number(event.target.value))}>
+          <option value={3}>3</option>
+          <option value={4}>4</option>
+          <option value={5}>5</option>
+        </select>
+      </label>
+      <label className="arrange-option arrange-snake">
+        <input type="checkbox" checked={arrangeSnake} disabled={readOnly} onChange={(event) => setArrangeSnake(event.target.checked)} />
+        <span>Snake</span>
+      </label>
+    </div>
+    <div className="toolbar-group toolbar-group-complete">
+      <button type="button" disabled={readOnly} onClick={() => runArrange('all')}>Rearrange all</button>
+    </div>
+  </>
   return <main className="app-shell">
     <header><a href="/ui">Dashboard</a><h1>Workflow editor</h1><nav className="editor-tabs" aria-label="Editor sections"><span className="editor-tab is-active" aria-current="page">Editor</span><button className="editor-tab" type="button" hidden={!canRun} disabled={!canOpenRuns} title={canOpenRuns ? 'Open the dashboard Runs tab for the current workflow and version.' : 'Load a workflow and version first.'} onClick={() => { window.location.href = runsUrl }}>Runs</button></nav><button type="button" aria-expanded={assistantOpen} onClick={() => setAssistantOpen((open) => !open)}>Assistant</button><select value={version?.id ?? ''} onChange={(e) => { const next = versions.find((item) => item.id === Number(e.target.value)); if (next && (!dirty || confirm('Discard unsaved changes?'))) loadVersion(next) }}>{versions.map((item) => <option value={item.id} key={item.id}>v{item.version_number}{item.is_published ? ' · published' : ' · draft'}</option>)}</select><button onClick={createVersion}>New version</button><button onClick={togglePublished} disabled={!version || (!version.is_published && !validation.valid)}>{version?.is_published ? 'Unpublish' : 'Publish'}</button><button onClick={save} disabled={readOnly || !dirty || !validation.valid}>Save</button>{message && <span className="error" role="alert">{message}</span>}</header>
     {assistantOpen && <div className="assistant-drawer"><AssistantPanel workflowId={workflowId || undefined} versionId={version?.id} definition={definition} stepTypes={stepTypes} disabled={readOnly} onApply={applyAssistantSteps} onClose={() => setAssistantOpen(false)} /></div>}
-    <div className="toolbar"><button disabled={!past.length || readOnly} onClick={undo}>Undo</button><button disabled={!future.length || readOnly} onClick={redo}>Redo</button><button disabled={readOnly} onClick={() => commit(arrange(nodes, edges))}>Arrange</button><button disabled={!selected || readOnly} onClick={duplicate}>Duplicate</button><span className={`validation-summary ${validation.valid ? 'valid' : 'error'}`}>{validation.valid ? `${validation.compiled_order.length} steps · valid` : `${validation.errors.length} validation errors`}</span>{preview && <div className="preview-toolbar-group" aria-live="polite"><strong>Preview: {preview.status}</strong><span>Step: {preview.current_node_id ?? 'starting'}</span>{preview.current_url && <span title={preview.current_url}>URL: {preview.current_url}</span>}{preview.inspection_state === 'inspection_ready' && <span>Browser ready for element picking · retained for {Math.ceil((preview.retention_seconds ?? 1200) / 60)} minutes</span>}{preview.error_code && <span className="error">Error: {preview.error_code}</span>}{['queued', 'running'].includes(preview.status) && <button type="button" onClick={stopPreview}>Stop preview</button>}{preview.inspection_state && preview.inspection_state !== 'closed' && !['queued', 'running'].includes(preview.status) && <button type="button" onClick={closePreview}>Close preview browser</button>}</div>}<AgentPairingControl connected={pickerAgentConnected} info={pickerAgentInfo}/>{workflowId > 0 && <PickerBrowserControl workflowId={workflowId} nodeId={selected?.id} clientId={pickerClientId} connected={pickerAgentConnected} disabled={readOnly} session={pickerSession} onSessionChange={setPickerSession} notify={notify}/>}</div>
+    <div className="toolbar"><button disabled={!past.length || readOnly} onClick={undo}>Undo</button><button disabled={!future.length || readOnly} onClick={redo}>Redo</button>{arrangeControls}<button disabled={!selected || readOnly} onClick={duplicate}>Duplicate</button><span className={`validation-summary ${validation.valid ? 'valid' : 'error'}`}>{validation.valid ? `${validation.compiled_order.length} steps · valid` : `${validation.errors.length} validation errors`}</span>{preview && <div className="preview-toolbar-group" aria-live="polite"><strong>Preview: {preview.status}</strong><span>Step: {preview.current_node_id ?? 'starting'}</span>{preview.current_url && <span title={preview.current_url}>URL: {preview.current_url}</span>}{preview.inspection_state === 'inspection_ready' && <span>Browser ready for element picking · retained for {Math.ceil((preview.retention_seconds ?? 1200) / 60)} minutes</span>}{preview.error_code && <span className="error">Error: {preview.error_code}</span>}{['queued', 'running'].includes(preview.status) && <button type="button" onClick={stopPreview}>Stop preview</button>}{preview.inspection_state && preview.inspection_state !== 'closed' && !['queued', 'running'].includes(preview.status) && <button type="button" onClick={closePreview}>Close preview browser</button>}</div>}<AgentPairingControl connected={pickerAgentConnected} info={pickerAgentInfo}/>{workflowId > 0 && <PickerBrowserControl workflowId={workflowId} nodeId={selected?.id} clientId={pickerClientId} connected={pickerAgentConnected} disabled={readOnly} session={pickerSession} onSessionChange={setPickerSession} notify={notify}/>}</div>
     <div className="workspace">
       <Palette stepTypes={stepTypes} disabled={readOnly} onAdd={addStep} onControl={addControl} onComment={addComment}/>
       <section className="canvas" ref={reactFlowWrapper}>
@@ -500,7 +545,7 @@ export default function App() {
           onReconnect={onReconnect}
           onReconnectEnd={(_, edge) => { if (!reconnectSucceeded.current) commit(nodes, edges.filter((item) => item.id !== edge.id)) }}
           onEdgeContextMenu={onEdgeContextMenu}
-          onSelectionChange={({ nodes: selectedNodes }) => setSelectedId(selectedNodes[0]?.id)}
+          onSelectionChange={handleSelectionChange}
           onNodeDragStart={checkpoint}
           onNodeContextMenu={onNodeContextMenu}
           onPaneClick={closeContextMenu}

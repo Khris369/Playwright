@@ -2,12 +2,29 @@ import type { Definition, GraphEdge, GraphNode, HandleSide } from './types'
 
 export const uid = () => crypto.randomUUID()
 
-const NODE_WIDTH = 210
-const NODE_HEIGHT = 80
 const STEP_X = 250
-const STEP_Y = 130
-const COLUMNS_PER_ROW = 4
-const ROW_GAP = 70
+export const FALLBACK_NODE_WIDTH = 320
+export const FALLBACK_NODE_HEIGHT = 180
+const LAYOUT_ORIGIN_X = 190
+const LAYOUT_ORIGIN_Y = 70
+const RANK_GAP_X = 22
+const LANE_GAP_Y = 30
+const COMPONENT_GAP_Y = 220
+const COLLISION_PADDING_X = 20
+const COLLISION_PADDING_Y = 16
+const HORIZONTAL_GAP = 22
+const VERTICAL_GAP = 28
+const MAX_TIDY_PASSES = 12
+
+export type ArrangeMode = 'tidy' | 'selected' | 'all'
+export type NodeDimensions = { width: number; height: number }
+export interface ArrangeOptions {
+  mode: ArrangeMode
+  selectedNodeIds?: ReadonlySet<string>
+  nodeDimensions?: ReadonlyMap<string, NodeDimensions>
+  columns?: number
+  snake?: boolean
+}
 
 export function blankGraph(): { nodes: GraphNode[]; edges: GraphEdge[] } {
   return {
@@ -119,60 +136,215 @@ export function linearOrder(nodes: GraphNode[], edges: GraphEdge[]): string[] {
   return order
 }
 
-export function arrange(nodes: GraphNode[], edges: GraphEdge[]): GraphNode[] {
+export function arrange(nodes: GraphNode[], edges: GraphEdge[], options: ArrangeOptions = { mode: 'tidy' }): GraphNode[] {
   const executable = nodes.filter((node) => node.data.kind !== 'comment')
-  const start = executable.find((node) => node.data.kind === 'start')
-  const rank = new Map<string, number>()
-  const queue: string[] = []
-  if (start) { rank.set(start.id, 0); queue.push(start.id) }
+  const dimensions = options.nodeDimensions ?? new Map<string, NodeDimensions>()
+  if (options.mode === 'all') {
+    return applyPositions(nodes, calculateFullLayout(executable, edges, dimensions))
+  }
 
-  while (queue.length) {
-    const source = queue.shift()!
-    const sourceRank = rank.get(source) ?? 0
-    for (const edge of edges.filter((item) => item.source === source)) {
-      if (rank.has(edge.target)) continue // Loop-back or already ranked through another path.
-      rank.set(edge.target, sourceRank + 1)
-      queue.push(edge.target)
+  const selectedIds = options.mode === 'selected'
+    ? new Set([...options.selectedNodeIds ?? []].filter((id) => executable.some((node) => node.id === id)))
+    : new Set(executable.filter((node) => hasLocalCollision(node, executable, dimensions)).map((node) => node.id))
+  if (options.mode === 'selected' && selectedIds.size < 2) return nodes
+  if (!selectedIds.size) return nodes
+
+  if (options.mode === 'selected') {
+    const selected = executable.filter((node) => selectedIds.has(node.id))
+    const proposed = calculateSelectedGridLayout(selected, edges, dimensions, options.columns ?? 4, options.snake ?? true)
+    return applyPositions(nodes, resolveLocalCollisions(executable, edges, selectedIds, dimensions, proposed))
+  }
+
+  return applyPositions(nodes, resolveLocalCollisions(executable, edges, selectedIds, dimensions))
+}
+
+function calculateSelectedGridLayout(nodes: GraphNode[], edges: GraphEdge[], dimensions: ReadonlyMap<string, NodeDimensions>, requestedColumns: number, snake: boolean): Map<string, Position> {
+  const columns = Math.max(1, Math.min(12, Math.round(requestedColumns)))
+  const ids = new Set(nodes.map((node) => node.id)); const index = new Map(nodes.map((node, i) => [node.id, i])); const { outgoing, incoming } = buildAdjacency(edges, ids)
+  const rank = new Map<string, number>(); const queue: string[] = []
+  const roots = nodes.filter((node) => (incoming.get(node.id) ?? []).length === 0)
+  for (const node of [...roots, ...nodes.filter((node) => !roots.includes(node))]) { if (rank.has(node.id)) continue; rank.set(node.id, 0); queue.push(node.id); while (queue.length) { const source = queue.shift()!; const sourceRank = rank.get(source) ?? 0; for (const edge of sortedEdges(outgoing.get(source) ?? [])) { if (rank.has(edge.target)) continue; rank.set(edge.target, sourceRank + 1); queue.push(edge.target) } } }
+  const maxRank = Math.max(...rank.values(), 0); let nextRank = maxRank + 1; for (const node of nodes) if (!rank.has(node.id)) rank.set(node.id, nextRank++)
+  const byRank = new Map<number, GraphNode[]>(); for (const node of nodes) byRank.set(rank.get(node.id)!, [...(byRank.get(rank.get(node.id)!) ?? []), node])
+  const order = new Map(nodes.map((node, i) => [node.id, i])); for (const group of byRank.values()) group.sort((a, b) => order.get(a.id)! - order.get(b.id)! || a.id.localeCompare(b.id))
+  const cellWidth = Math.max(...nodes.map((node) => nodeDimension(node, dimensions).width), FALLBACK_NODE_WIDTH) + HORIZONTAL_GAP
+  const rowHeights = new Map<number, number>(); for (const [rankValue, group] of byRank) { const row = Math.floor(rankValue / columns); const height = Math.max(...group.map((node) => nodeDimension(node, dimensions).height), FALLBACK_NODE_HEIGHT); rowHeights.set(row, Math.max(rowHeights.get(row) ?? 0, height + VERTICAL_GAP)) }
+  const rowTop = new Map<number, number>(); let y = 0; for (let row = 0; row <= Math.floor(maxRank / columns); row++) { rowTop.set(row, y); y += rowHeights.get(row) ?? FALLBACK_NODE_HEIGHT + VERTICAL_GAP }
+  const positions = new Map<string, Position>(); for (const [rankValue, group] of byRank) { const row = Math.floor(rankValue / columns); const offset = rankValue % columns; const visualColumn = snake && row % 2 === 1 ? columns - 1 - offset : offset; const x = visualColumn * cellWidth; let laneY = rowTop.get(row) ?? 0; for (const node of group) { positions.set(node.id, { x, y: laneY }); laneY += nodeDimension(node, dimensions).height + VERTICAL_GAP } }
+  const currentOrigin = boundingOrigin(nodes); const layoutOrigin = boundingOrigin(nodes, positions); for (const node of nodes) { const position = positions.get(node.id)!; positions.set(node.id, { x: position.x + currentOrigin.x - layoutOrigin.x, y: position.y + currentOrigin.y - layoutOrigin.y }) }
+  return positions
+}
+
+function boundingOrigin(nodes: GraphNode[], positions?: ReadonlyMap<string, Position>): Position {
+  return nodes.reduce((origin, node) => { const position = positions?.get(node.id) ?? node.position; return { x: Math.min(origin.x, position.x), y: Math.min(origin.y, position.y) } }, { x: Number.POSITIVE_INFINITY, y: Number.POSITIVE_INFINITY })
+}
+
+function nodeDimension(node: GraphNode, dimensions: ReadonlyMap<string, NodeDimensions>): NodeDimensions {
+  const measured = dimensions.get(node.id)
+  const width = measured?.width ?? node.measured?.width ?? node.width
+  const height = measured?.height ?? node.measured?.height ?? node.height
+  return width && width > 0 && height && height > 0 ? { width, height } : { width: FALLBACK_NODE_WIDTH, height: FALLBACK_NODE_HEIGHT }
+}
+
+function buildAdjacency(edges: GraphEdge[], ids: ReadonlySet<string>) {
+  const outgoing = new Map<string, GraphEdge[]>(); const incoming = new Map<string, GraphEdge[]>()
+  for (const id of ids) { outgoing.set(id, []); incoming.set(id, []) }
+  for (const edge of edges) {
+    if (!ids.has(edge.source) || !ids.has(edge.target)) continue
+    outgoing.get(edge.source)!.push(edge); incoming.get(edge.target)!.push(edge)
+  }
+  return { outgoing, incoming }
+}
+
+function branchRank(branch: unknown): number {
+  if (branch === 'true' || branch === 'body') return 0
+  if (branch === undefined) return 1
+  if (branch === 'false' || branch === 'done') return 2
+  return 3
+}
+
+function sortedEdges(edges: GraphEdge[]): GraphEdge[] {
+  return [...edges].sort((a, b) => branchRank(a.data?.branch) - branchRank(b.data?.branch) || String(a.data?.branch ?? '').localeCompare(String(b.data?.branch ?? '')) || a.target.localeCompare(b.target) || a.id.localeCompare(b.id))
+}
+
+function stronglyConnectedComponents(nodes: GraphNode[], edges: GraphEdge[]): string[][] {
+  const ids = new Set(nodes.map((node) => node.id)); const { outgoing } = buildAdjacency(edges, ids)
+  let index = 0; const indices = new Map<string, number>(); const low = new Map<string, number>(); const stack: string[] = []; const onStack = new Set<string>(); const result: string[][] = []
+  const visit = (id: string) => {
+    indices.set(id, index); low.set(id, index); index++; stack.push(id); onStack.add(id)
+    for (const edge of sortedEdges(outgoing.get(id) ?? [])) {
+      if (!indices.has(edge.target)) { visit(edge.target); low.set(id, Math.min(low.get(id)!, low.get(edge.target)!)) }
+      else if (onStack.has(edge.target)) low.set(id, Math.min(low.get(id)!, indices.get(edge.target)!))
+    }
+    if (low.get(id) === indices.get(id)) {
+      const component: string[] = []; let member = ''
+      do { member = stack.pop()!; onStack.delete(member); component.push(member) } while (member !== id)
+      result.push(component)
     }
   }
+  for (const node of nodes) if (!indices.has(node.id)) visit(node.id)
+  return result
+}
 
-  let disconnectedRank = Math.max(0, ...rank.values()) + 1
-  for (const node of executable) {
-    if (!rank.has(node.id)) rank.set(node.id, disconnectedRank++)
+function calculateFullLayout(nodes: GraphNode[], edges: GraphEdge[], dimensions: ReadonlyMap<string, NodeDimensions>): Map<string, { x: number; y: number }> {
+  if (!nodes.length) return new Map()
+  const ids = new Set(nodes.map((node) => node.id)); const index = new Map(nodes.map((node, i) => [node.id, i])); const { outgoing } = buildAdjacency(edges, ids)
+  const sccs = stronglyConnectedComponents(nodes, edges); const componentOf = new Map<string, number>(); sccs.forEach((component, i) => component.forEach((id) => componentOf.set(id, i)))
+  const componentEdges = new Map<number, Set<number>>(); const indegree = new Map<number, number>(); sccs.forEach((_, i) => { componentEdges.set(i, new Set()); indegree.set(i, 0) })
+  for (const edge of edges) { const source = componentOf.get(edge.source); const target = componentOf.get(edge.target); if (source === undefined || target === undefined || source === target || componentEdges.get(source)!.has(target)) continue; componentEdges.get(source)!.add(target); indegree.set(target, indegree.get(target)! + 1) }
+  const ranks = new Map<number, number>(); const queue = [...indegree].filter(([, degree]) => degree === 0).map(([id]) => id).sort((a, b) => Math.min(...sccs[a].map((id) => index.get(id)!)) - Math.min(...sccs[b].map((id) => index.get(id)!)))
+  queue.forEach((id) => ranks.set(id, 0))
+  for (let cursor = 0; cursor < queue.length; cursor++) { const source = queue[cursor]; for (const target of componentEdges.get(source)!) { ranks.set(target, Math.max(ranks.get(target) ?? 0, (ranks.get(source) ?? 0) + 1)); indegree.set(target, indegree.get(target)! - 1); if (indegree.get(target) === 0) queue.push(target) } }
+  const rankOf = new Map<string, number>(); for (const [id, component] of sccs.entries()) for (const nodeId of component) rankOf.set(nodeId, ranks.get(id) ?? 0)
+  const ranksByNode = new Map<number, GraphNode[]>(); for (const node of nodes) ranksByNode.set(rankOf.get(node.id)!, [...(ranksByNode.get(rankOf.get(node.id)!) ?? []), node])
+  const order = new Map<string, number>(); const traversalSeen = new Set<string>(); const visitOrder = (node: GraphNode) => { if (traversalSeen.has(node.id)) return; traversalSeen.add(node.id); order.set(node.id, order.size); for (const edge of sortedEdges(outgoing.get(node.id) ?? [])) { const target = nodes.find((item) => item.id === edge.target); if (target) visitOrder(target) } }; const start = nodes.find((node) => node.data.kind === 'start'); if (start) visitOrder(start); for (const node of nodes) visitOrder(node)
+  for (const group of ranksByNode.values()) group.sort((a, b) => (order.get(a.id) ?? Number.MAX_SAFE_INTEGER) - (order.get(b.id) ?? Number.MAX_SAFE_INTEGER) || index.get(a.id)! - index.get(b.id)! || a.id.localeCompare(b.id))
+  const position = new Map<string, { x: number; y: number }>(); let componentOffsetY = LAYOUT_ORIGIN_Y
+  const undirected = new Map<string, Set<string>>(); for (const node of nodes) undirected.set(node.id, new Set()); for (const edge of edges) { if (ids.has(edge.source) && ids.has(edge.target)) { undirected.get(edge.source)!.add(edge.target); undirected.get(edge.target)!.add(edge.source) } }
+  const components: GraphNode[][] = []; const seenNodes = new Set<string>(); for (const node of nodes) { if (seenNodes.has(node.id)) continue; const component: GraphNode[] = []; const pending = [node.id]; seenNodes.add(node.id); while (pending.length) { const id = pending.pop()!; component.push(nodes.find((item) => item.id === id)!); for (const next of undirected.get(id)!) if (!seenNodes.has(next)) { seenNodes.add(next); pending.push(next) } } components.push(component) }
+  components.sort((a, b) => (a.some((node) => node.data.kind === 'start') ? -1 : b.some((node) => node.data.kind === 'start') ? 1 : Math.min(...a.map((node) => index.get(node.id)!)) - Math.min(...b.map((node) => index.get(node.id)!))))
+  const rankX = new Map<number, number>(); let nextX = LAYOUT_ORIGIN_X
+  for (const rank of [...ranksByNode.keys()].sort((a, b) => a - b)) { rankX.set(rank, nextX); nextX += Math.max(...(ranksByNode.get(rank) ?? []).map((node) => nodeDimension(node, dimensions).width), FALLBACK_NODE_WIDTH) + RANK_GAP_X }
+  for (const component of components) { const componentIds = new Set(component.map((node) => node.id)); const componentRanks = [...new Set(component.map((node) => rankOf.get(node.id) ?? 0))].sort((a, b) => a - b); let maxY = componentOffsetY
+    for (const rank of componentRanks) { const group = (ranksByNode.get(rank) ?? []).filter((node) => componentIds.has(node.id)); if (!group.length) continue; const x = rankX.get(rank) ?? LAYOUT_ORIGIN_X; let y = componentOffsetY; for (const node of group) { position.set(node.id, { x, y }); y += nodeDimension(node, dimensions).height + LANE_GAP_Y } maxY = Math.max(maxY, y) }
+    componentOffsetY = maxY + COMPONENT_GAP_Y
   }
+  return position
+}
 
-  const columns = new Map<number, GraphNode[]>()
-  for (const node of executable) {
-    const column = rank.get(node.id) ?? 0
-    columns.set(column, [...(columns.get(column) ?? []), node])
+type Position = { x: number; y: number }
+
+function positionOf(node: GraphNode, positions: ReadonlyMap<string, Position>): Position {
+  return positions.get(node.id) ?? node.position
+}
+
+function rectFor(node: GraphNode, position: Position, dimensions: ReadonlyMap<string, NodeDimensions>) {
+  const size = nodeDimension(node, dimensions)
+  return { ...position, right: position.x + size.width, bottom: position.y + size.height, width: size.width, height: size.height }
+}
+
+function visuallyCramped(a: GraphNode, b: GraphNode, positions: ReadonlyMap<string, Position>, dimensions: ReadonlyMap<string, NodeDimensions>): boolean {
+  const first = rectFor(a, positionOf(a, positions), dimensions); const second = rectFor(b, positionOf(b, positions), dimensions)
+  const horizontalOverlap = first.x < second.right + COLLISION_PADDING_X && first.right + COLLISION_PADDING_X > second.x
+  const verticalOverlap = first.y < second.bottom + COLLISION_PADDING_Y && first.bottom + COLLISION_PADDING_Y > second.y
+  if (horizontalOverlap && verticalOverlap) return true
+  const horizontalGap = Math.max(first.x - second.right, second.x - first.right, 0)
+  const verticalGap = Math.max(first.y - second.bottom, second.y - first.bottom, 0)
+  return (horizontalGap < HORIZONTAL_GAP && verticalOverlap) || (verticalGap < VERTICAL_GAP && horizontalOverlap)
+}
+
+function hasLocalCollision(node: GraphNode, nodes: GraphNode[], dimensions: ReadonlyMap<string, NodeDimensions>): boolean {
+  return nodes.some((other) => other.id !== node.id && visuallyCramped(node, other, new Map(), dimensions))
+}
+
+function localDirection(nodeId: string, anchorId: string, edges: GraphEdge[], positions: ReadonlyMap<string, Position>): { x: number; y: number } {
+  const current = positions.get(nodeId)!; const anchor = positions.get(anchorId)!; const direct = { x: Math.sign(current.x - anchor.x), y: Math.sign(current.y - anchor.y) }
+  if (direct.x || direct.y) return direct
+  for (const edge of edges) {
+    if (edge.target === nodeId && positions.has(edge.source)) {
+      const neighbour = positions.get(edge.source)!; const vector = { x: Math.sign(current.x - neighbour.x), y: Math.sign(current.y - neighbour.y) }
+      if (vector.x || vector.y) return vector
+    }
+    if (edge.source === nodeId && positions.has(edge.target)) {
+      const neighbour = positions.get(edge.target)!; const vector = { x: Math.sign(current.x - neighbour.x), y: Math.sign(current.y - neighbour.y) }
+      if (vector.x || vector.y) return vector
+    }
   }
-  const rowCount = Math.ceil((Math.max(0, ...columns.keys()) + 1) / COLUMNS_PER_ROW)
-  const rowLaneCounts = Array.from({ length: rowCount }, (_, row) => {
-    const firstColumn = row * COLUMNS_PER_ROW
-    return Math.max(1, ...Array.from({ length: COLUMNS_PER_ROW }, (_, offset) => columns.get(firstColumn + offset)?.length ?? 0))
+  return { x: 1, y: 0 }
+}
+
+function candidatePositions(moving: GraphNode, anchor: GraphNode, direction: { x: number; y: number }, positions: ReadonlyMap<string, Position>, dimensions: ReadonlyMap<string, NodeDimensions>): Position[] {
+  const movingRect = rectFor(moving, positionOf(moving, positions), dimensions); const anchorRect = rectFor(anchor, positionOf(anchor, positions), dimensions); const current = positionOf(moving, positions)
+  const xRight = anchorRect.right + HORIZONTAL_GAP; const xLeft = anchorRect.x - movingRect.width - HORIZONTAL_GAP
+  const yBelow = anchorRect.bottom + VERTICAL_GAP; const yAbove = anchorRect.y - movingRect.height - VERTICAL_GAP
+  const horizontal = direction.x >= 0 ? [{ x: xRight, y: current.y }, { x: xLeft, y: current.y }] : [{ x: xLeft, y: current.y }, { x: xRight, y: current.y }]
+  const vertical = direction.y >= 0 ? [{ x: current.x, y: yBelow }, { x: current.x, y: yAbove }] : [{ x: current.x, y: yAbove }, { x: current.x, y: yBelow }]
+  const diagonal = [
+    { x: direction.x >= 0 ? xRight : xLeft, y: direction.y >= 0 ? yBelow : yAbove },
+    { x: direction.x >= 0 ? xRight : xLeft, y: direction.y >= 0 ? yAbove : yBelow },
+    { x: direction.x >= 0 ? xLeft : xRight, y: direction.y >= 0 ? yBelow : yAbove },
+    { x: direction.x >= 0 ? xLeft : xRight, y: direction.y >= 0 ? yAbove : yBelow },
+  ]
+  return [...(direction.y ? vertical : []), ...(direction.x ? horizontal : []), ...diagonal]
+}
+
+function isPositionFree(node: GraphNode, candidate: Position, nodes: GraphNode[], positions: ReadonlyMap<string, Position>, dimensions: ReadonlyMap<string, NodeDimensions>): boolean {
+  const next = new Map(positions); next.set(node.id, candidate)
+  return nodes.every((other) => other.id === node.id || !visuallyCramped(node, other, next, dimensions))
+}
+
+function resolveLocalCollisions(nodes: GraphNode[], edges: GraphEdge[], movableIds: ReadonlySet<string>, dimensions: ReadonlyMap<string, NodeDimensions>, startingPositions?: ReadonlyMap<string, Position>): Map<string, Position> {
+  const positions = new Map(nodes.map((node) => [node.id, { ...(startingPositions?.get(node.id) ?? node.position) }]))
+  const order = new Map(nodes.map((node, index) => [node.id, index])); const collisions = () => nodes.flatMap((node, index) => nodes.slice(index + 1).filter((other) => visuallyCramped(node, other, positions, dimensions)).map((other) => [node, other] as const))
+  for (let pass = 0; pass < MAX_TIDY_PASSES; pass++) {
+    const pairs = collisions(); if (!pairs.length) break
+    for (const [first, second] of pairs) {
+      const firstMovable = movableIds.has(first.id); const secondMovable = movableIds.has(second.id); if (!firstMovable && !secondMovable) continue
+      const firstCollisions = pairs.filter(([a, b]) => a.id === first.id || b.id === first.id).length; const secondCollisions = pairs.filter(([a, b]) => a.id === second.id || b.id === second.id).length
+      const moving = !firstMovable ? second : !secondMovable ? first : firstCollisions > secondCollisions || (firstCollisions === secondCollisions && (order.get(first.id) ?? 0) < (order.get(second.id) ?? 0)) ? first : second
+      const anchor = moving.id === first.id ? second : first; const direction = localDirection(moving.id, anchor.id, edges, positions)
+      const candidates = candidatePositions(moving, anchor, direction, positions, dimensions).map((candidate, index) => {
+        const anchorPosition = positionOf(anchor, positions)
+        const candidateDirection = { x: Math.sign(candidate.x - anchorPosition.x), y: Math.sign(candidate.y - anchorPosition.y) }
+        const directionMatches = (direction.x !== 0 && candidateDirection.x === direction.x ? 1 : 0) + (direction.y !== 0 && candidateDirection.y === direction.y ? 1 : 0)
+        return { candidate, index, directionMatches, distance: Math.hypot(candidate.x - positions.get(moving.id)!.x, candidate.y - positions.get(moving.id)!.y) }
+      }).sort((a, b) => b.directionMatches - a.directionMatches || a.distance - b.distance || a.index - b.index)
+      const valid = candidates.find(({ candidate }) => isPositionFree(moving, candidate, nodes, positions, dimensions))
+      if (valid) positions.set(moving.id, valid.candidate)
+    }
+  }
+  return positions
+}
+
+function applyPositions(nodes: GraphNode[], positions: ReadonlyMap<string, Position>): GraphNode[] {
+  let changed = false
+  const result = nodes.map((node) => {
+    if (node.data.kind === 'comment') return node
+    const position = positions.get(node.id) ?? node.position
+    if (position.x !== node.position.x || position.y !== node.position.y) changed = true
+    return position.x === node.position.x && position.y === node.position.y ? node : { ...node, position }
   })
-  const rowTops: number[] = []
-  let nextTop = 70
-  for (const laneCount of rowLaneCounts) {
-    rowTops.push(nextTop)
-    nextTop += Math.max(80, (laneCount - 1) * STEP_Y + 80) + ROW_GAP
-  }
-
-  const position = new Map<string, { x: number; y: number }>()
-  for (const [column, columnNodes] of columns) {
-    const row = Math.floor(column / COLUMNS_PER_ROW)
-    const offset = column % COLUMNS_PER_ROW
-    const visualColumn = row % 2 === 0 ? offset : COLUMNS_PER_ROW - 1 - offset
-    const rowHeight = Math.max(80, (rowLaneCounts[row] - 1) * STEP_Y + 80)
-    const laneHeight = (columnNodes.length - 1) * STEP_Y + 80
-    const laneTop = rowTops[row] + (rowHeight - laneHeight) / 2
-    columnNodes.forEach((node, index) => position.set(node.id, {
-      x: 190 + visualColumn * STEP_X,
-      y: laneTop + index * STEP_Y,
-    }))
-  }
-
-  return nodes.map((node) => node.data.kind === 'comment' ? node : { ...node, position: position.get(node.id) ?? node.position })
+  return changed ? result : nodes
 }
 
 export function rewireOrder(order: string[]): GraphEdge[] {
