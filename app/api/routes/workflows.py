@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from pydantic import ValidationError
 
 from app.core.auth import current_user, require_permission, require_workflow_access, require_workflow_owner
 from app.schemas.workflow_member import WorkflowMemberResponse, WorkflowMembersUpdate
@@ -16,8 +17,49 @@ from app.schemas.workflow import (
 from app.engine.graph import GraphValidationError
 from app.services.workflow_repository import WorkflowRepository
 from app.services.workflow_version_repository import WorkflowVersionRepository, VersionConflictError
+from app.schemas.workflow_portable import PortableWorkflow
+from app.services.workflow_portable import export_workflow, import_workflow
 
 router = APIRouter(prefix="/workflows", tags=["workflows"])
+MAX_IMPORT_BYTES = 10 * 1024 * 1024
+
+
+@router.get("/{workflow_id}/export", response_model=PortableWorkflow)
+def download_workflow(workflow_id: int, user: dict = Depends(require_workflow_access("workflow.view"))) -> PortableWorkflow:
+    try:
+        exported = export_workflow(workflow_id)
+    except ValueError as exc:
+        messages = {
+            "no_versions": "Workflow has no versions to export",
+            "too_many_versions": "Workflow has more than 100 versions",
+            "export_too_large": "Workflow export exceeds 10 MiB",
+        }
+        if str(exc) not in messages:
+            raise
+        raise HTTPException(status_code=422, detail=messages[str(exc)]) from exc
+    if exported is None:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    return exported
+
+
+@router.post("/import", status_code=status.HTTP_201_CREATED)
+async def upload_workflow(request: Request, user: dict = Depends(require_permission("workflow.edit"))) -> dict[str, int]:
+    chunks = []
+    size = 0
+    async for chunk in request.stream():
+        size += len(chunk)
+        if size > MAX_IMPORT_BYTES:
+            raise HTTPException(status_code=413, detail="Workflow file exceeds 10 MiB")
+        chunks.append(chunk)
+    try:
+        payload = PortableWorkflow.model_validate_json(b"".join(chunks))
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail="Invalid workflow export file") from exc
+    try:
+        workflow_id = import_workflow(payload, int(user["id"]))
+    except GraphValidationError as exc:
+        raise HTTPException(status_code=422, detail={"code": "invalid_definition", "errors": [i.as_dict() for i in exc.issues]}) from exc
+    return {"id": workflow_id}
 
 
 @router.get("/{workflow_id}/members", response_model=list[WorkflowMemberResponse])

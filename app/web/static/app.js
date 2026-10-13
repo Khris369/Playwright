@@ -1021,6 +1021,7 @@ function ensureWorkflowLayout() {
     <div class="workflows-header-copy">
       <h2>Workflows</h2>
       <p class="hint">Manage workflow definitions and open the graph editor.</p>
+      <p class="hint">Export files contain workflow step values. Check for sensitive data before sharing.</p>
     </div>
   `;
 
@@ -1033,8 +1034,19 @@ function ensureWorkflowLayout() {
   openCreateButton.className = "btn-primary";
   openCreateButton.textContent = "+ New Workflow";
 
+  const importButton = document.createElement("button");
+  importButton.id = "btn-import-workflow";
+  importButton.type = "button";
+  importButton.className = "btn-secondary";
+  importButton.textContent = "Import workflow";
+  const importInput = document.createElement("input");
+  importInput.id = "workflow-import-file";
+  importInput.type = "file";
+  importInput.accept = ".json,application/json";
+  importInput.hidden = true;
+
   refreshButton.classList.add("btn-secondary");
-  toolbar.append(openCreateButton, refreshButton);
+  toolbar.append(openCreateButton, importButton, importInput, refreshButton);
   header.appendChild(toolbar);
 
   const controls = document.createElement("div");
@@ -1096,6 +1108,7 @@ function workflowRow(wf) {
       <div class="workflow-cell workflow-cell-actions" role="cell">
         <button type="button" class="btn-link-inline" data-action="edit" data-workflow-id="${wf.id}">Edit</button>
         <button type="button" class="btn-link-inline" data-action="share" data-workflow-id="${wf.id}">Share</button>
+        <button type="button" class="btn-link-inline" data-action="export" data-workflow-id="${wf.id}">Export</button>
         <button type="button" class="btn-danger-outline" data-action="delete" data-workflow-id="${wf.id}">Delete</button>
       </div>
     </div>
@@ -1237,6 +1250,19 @@ async function shareWorkflowById(workflowId) {
   setSharePermissionChecks(dialog._members.find((member) => member.user_id === Number(select.value))?.permissions || ["workflow.view"]);
   renderShareMembers(dialog);
   if (typeof dialog.showModal === "function") dialog.showModal();
+}
+
+async function exportWorkflowById(workflowId) {
+  const exported = await api(`/workflows/${workflowId}/export`);
+  const blob = new Blob([JSON.stringify(exported)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `workflow-${workflowId}.json`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 on("workflow-share-user", "change", () => {
@@ -1940,6 +1966,13 @@ if (workflowListElement && !workflowListElement.dataset.bound) {
           toast(err.message, true);
         }
       }
+      if (actionButton.getAttribute("data-action") === "export") {
+        try {
+          await exportWorkflowById(workflowId);
+        } catch (err) {
+          toast(err.message, true);
+        }
+      }
       if (actionButton.getAttribute("data-action") === "delete") {
         try {
           await deleteWorkflowById(workflowId);
@@ -1984,6 +2017,24 @@ if (workflowSearchInput && !workflowSearchInput.dataset.bound) {
 }
 on("btn-open-create-workflow", "click", () => {
   openWorkflowCreatePanel();
+});
+
+on("btn-import-workflow", "click", () => $("workflow-import-file")?.click());
+on("workflow-import-file", "change", async (event) => {
+  const input = event.target;
+  const file = input.files?.[0];
+  if (!file) return;
+  try {
+    if (file.size > 10 * 1024 * 1024) throw new Error("Workflow file exceeds 10 MiB");
+    const created = await api("/workflows/import", { method: "POST", body: await file.text() });
+    await refreshWorkflows();
+    await selectWorkflow(created.id);
+    toast(`Workflow imported: #${created.id}. Review and publish a version when ready.`);
+  } catch (err) {
+    toast(err.message, true);
+  } finally {
+    input.value = "";
+  }
 });
 
 on("btn-create-workflow", "click", async () => {
