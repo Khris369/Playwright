@@ -7,7 +7,7 @@ from typing import Any, Awaitable, Callable
 
 from app.engine.contracts import (
     AssertTextVisibleArgs, AssertUrlNotEqualArgs, ClickArgs, GotoUrlArgs,
-    SelectOptionArgs, TargetValueArgs, VerifyElementArgs, WaitForElementArgs,
+    SelectOptionArgs, TargetValueArgs, TypeTextArgs, VerifyElementArgs, WaitForElementArgs,
     WaitTimeoutArgs, TicketCreateArgs, TicketFillFieldsArgs,
 )
 from app.engine.template import resolve_value
@@ -233,6 +233,21 @@ class LocalPreviewExecutor:
             args = ClickArgs.model_validate(raw); locator = await _strict(_locator(page, args.target), args.target); await locator.click(); state["current_url"] = page.url; return "Clicked target"
         if node_type == "fill_input":
             args = TargetValueArgs.model_validate(raw); locator = await _strict(_locator(page, args.target), args.target); await locator.fill(args.value); return "Filled input"
+        if node_type == "type_text":
+            args = TypeTextArgs.model_validate(raw)
+            if not args.value:
+                raise PreviewError("Type text needs a non-empty value")
+            editable = await page.evaluate("""() => {
+                const el = document.activeElement;
+                return (el instanceof HTMLTextAreaElement && !el.disabled && !el.readOnly)
+                    || (el instanceof HTMLInputElement && !el.disabled && !el.readOnly
+                        && ['text', 'search', 'email', 'url', 'tel', 'password', 'number'].includes(el.type))
+                    || (el instanceof HTMLElement && el.isContentEditable);
+            }""")
+            if not editable:
+                raise PreviewError("Click an editable input or message box before Type text")
+            await page.keyboard.type(args.value)
+            return "Typed text into focused editor"
         if node_type == "select_option":
             args = SelectOptionArgs.model_validate(raw); locator = await _strict(_locator(page, args.target), args.target); await locator.select_option(**{args.option.by: args.option.value}); return f"Selected option by {args.option.by}"
         if node_type == "wait_timeout":

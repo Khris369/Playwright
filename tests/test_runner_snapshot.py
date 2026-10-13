@@ -1,4 +1,11 @@
-from app.services.workflow_runner import WorkflowRunnerService
+from app.services.workflow_runner import WorkflowRunnerService, _step_log_args
+
+
+def test_message_text_is_redacted_from_step_history() -> None:
+    args = {"value": "private message", "target": {"strategy": "text", "text": "Type a message"}}
+    for step_type in ("fill_input", "type_text"):
+        assert _step_log_args(step_type, args)["value"] == "[redacted]"
+    assert args["value"] == "private message"
 
 
 def test_run_creation_stores_compiled_snapshot(monkeypatch) -> None:

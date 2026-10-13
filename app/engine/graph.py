@@ -176,15 +176,15 @@ def compile_definition(raw: dict[str, Any]) -> list[dict[str, Any]]:
         if node.kind in {"start", "step"} and len(outgoing[node_id]) > 1:
             issues.append(GraphIssue("branch", "Execution path cannot branch", node_id=node_id))
         if node.kind != "loop" and len(incoming[node_id]) > 1:
-            issues.append(GraphIssue("join", "Execution paths cannot join", node_id=node_id))
+            issues.append(GraphIssue("join", "This node has multiple incoming lines. Remove the extra line; only a Loop can receive a return path.", node_id=node_id))
         if node.kind == "if":
             labels = [edge.branch for edge in outgoing[node_id]]
             if sorted(str(label) for label in labels) != ["false", "true"]:
-                issues.append(GraphIssue("if_branches", "If requires exactly one true and one false connection", node_id=node_id))
+                issues.append(GraphIssue("if_branches", "Connect both If exits: upper TRUE and lower FALSE. If lines are already shown, redraw them from these handles.", node_id=node_id))
         if node.kind == "loop":
             labels = [edge.branch for edge in outgoing[node_id]]
             if sorted(str(label) for label in labels) != ["body", "done"]:
-                issues.append(GraphIssue("loop_branches", "Loop requires exactly one body and one done connection", node_id=node_id))
+                issues.append(GraphIssue("loop_branches", "Connect both Loop exits: upper BODY and lower DONE. If lines are already shown, redraw them from these handles.", node_id=node_id))
     if starts and incoming.get(starts[0].id):
         issues.append(GraphIssue("start_incoming", "Start node cannot have incoming edges", node_id=starts[0].id))
 

@@ -107,7 +107,7 @@ class AgentConnection:
             steps = payload.get("steps")
             if not isinstance(run_id, int) or not isinstance(steps, list) or not isinstance(payload.get("inputs"), dict) or not isinstance(payload.get("target_node_id"), str):
                 raise ValueError("Invalid preview plan")
-            allowed = {"goto_url", "click", "fill_input", "select_option", "wait_for_element", "wait_timeout", "verify_element", "assert_url_not_equal", "assert_text_visible", "ticket_create_new_ticket", "ticket_fill_fields", "__if__", "__loop__"}
+            allowed = {"goto_url", "click", "fill_input", "type_text", "select_option", "wait_for_element", "wait_timeout", "verify_element", "assert_url_not_equal", "assert_text_visible", "ticket_create_new_ticket", "ticket_fill_fields", "__if__", "__loop__"}
             if not steps or any(not isinstance(step, dict) or str(step.get("type", "")) not in allowed for step in steps) or not any(str(step.get("id", "")) == payload["target_node_id"] for step in steps):
                 raise ValueError("Unsupported preview plan")
             for existing in list(self.previews.values()):

@@ -70,6 +70,7 @@ _items = (
     StepDefinition("goto_url", "Go to URL", "Navigation", "Navigate to a URL.", GotoUrlArgs, {"url": "https://example.com"}, _editor("url"), executor.goto_url),
     StepDefinition("click", "Click", "Interaction", "Click a typed locator.", ClickArgs, ROLE_BUTTON, _editor("target"), executor.click),
     StepDefinition("fill_input", "Fill input", "Interaction", "Fill a text control.", TargetValueArgs, {"target": LABEL_TARGET, "value": ""}, _editor("target", "value"), executor.fill_input),
+    StepDefinition("type_text", "Type text", "Interaction", "Type into the focused input or message box. Click it first; this step does not send the message.", TypeTextArgs, {"value": ""}, _editor("value"), executor.type_text),
     StepDefinition("select_option", "Select option", "Interaction", "Select explicitly by label, value, or index.", SelectOptionArgs, {"target": LABEL_TARGET, "option": {"by": "label", "value": "Option"}}, _editor("target", "option"), executor.select_option),
     StepDefinition("wait_for_element", "Wait for element", "Wait", "Wait for a target to reach a selected state.", WaitForElementArgs, {"target": LABEL_TARGET, "state": "visible", "timeout_ms": 30000}, _editor("target", "state", "timeout_ms"), executor.wait_for_element),
     StepDefinition("wait_timeout", "Wait timeout", "Wait", "Wait a bounded duration.", WaitTimeoutArgs, {"timeout_ms": 1000}, _editor("timeout_ms"), executor.wait_timeout),

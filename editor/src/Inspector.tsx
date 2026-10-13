@@ -441,8 +441,29 @@ export function Inspector({ node, stepType, readOnly, onChange, picker }: Props)
 
   if (node.data.kind === 'if' || node.data.kind === 'loop') {
     const args = node.data.args ?? {}
+    const isLoop = node.data.kind === 'loop'
     const setArg = (key: string, value: unknown) => onChange({ ...node.data, args: { ...args, [key]: value } })
-    return <aside className="inspector"><h2>{node.data.kind === 'if' ? 'If' : 'Loop'}</h2><p>Read a runtime state value and choose the matching exit.</p><label>State key<input disabled={readOnly} value={String(args.state_key ?? '')} onChange={(e) => setArg('state_key', e.target.value)} /></label><label>Operator<select disabled={readOnly} value={String(args.operator ?? 'equals')} onChange={(e) => setArg('operator', e.target.value)}><option value="equals">Equals</option><option value="not_equals">Does not equal</option><option value="contains">Contains</option><option value="truthy">Is truthy</option><option value="falsy">Is falsy</option></select></label>{!['truthy', 'falsy'].includes(String(args.operator)) && <label>Value<input disabled={readOnly} value={String(args.value ?? '')} onChange={(e) => setArg('value', e.target.value)} /></label>}{node.data.kind === 'loop' && <label>Maximum iterations<input disabled={readOnly} type="number" min="1" max="1000" value={Number(args.max_iterations ?? 10)} onChange={(e) => setArg('max_iterations', Number(e.target.value))} /></label>}<ConnectionSideFields node={node} readOnly={readOnly} onChange={onChange} /></aside>
+    return <aside className="inspector">
+      <h2>{isLoop ? 'Loop' : 'If'}</h2>
+      <div className="control-guide">
+        <p>{isLoop ? 'Check the condition before each repeat.' : 'Check the condition when the workflow reaches this node.'}</p>
+        {isLoop ? <ol>
+          <li>Connect the upper BODY handle to the steps to repeat.</li>
+          <li>Connect the last repeated step back to this Loop's input.</li>
+          <li>Connect the lower DONE handle to the next step.</li>
+        </ol> : <ol>
+          <li>Connect the upper TRUE handle to the matching path.</li>
+          <li>Connect the lower FALSE handle to the other path.</li>
+        </ol>}
+        <p>{isLoop ? 'BODY runs while the condition is false. DONE runs when it becomes true or the iteration limit is reached. Wait for element does not change this condition.' : 'Both paths need a connection. They cannot rejoin at a normal step.'}</p>
+      </div>
+      <label>State key<input disabled={readOnly} value={String(args.state_key ?? '')} onChange={(e) => setArg('state_key', e.target.value)} /></label>
+      <p className="control-field-hint">Use <code>current_url</code> or <code>inputs.name</code> for a run input named “name”. For example, <code>current_url</code> contains <code>/review</code>.</p>
+      <label>Operator<select disabled={readOnly} value={String(args.operator ?? 'equals')} onChange={(e) => setArg('operator', e.target.value)}><option value="equals">Equals</option><option value="not_equals">Does not equal</option><option value="contains">Contains</option><option value="truthy">Is truthy</option><option value="falsy">Is falsy</option></select></label>
+      {!['truthy', 'falsy'].includes(String(args.operator)) && <label>Value<input disabled={readOnly} value={String(args.value ?? '')} onChange={(e) => setArg('value', e.target.value)} /></label>}
+      {isLoop && <><label>Maximum iterations<input disabled={readOnly} type="number" min="1" max="1000" value={Number(args.max_iterations ?? 10)} onChange={(e) => setArg('max_iterations', Number(e.target.value))} /></label><p className="control-field-hint">The DONE path also runs when this limit is reached.</p></>}
+      <ConnectionSideFields node={node} readOnly={readOnly} onChange={onChange} />
+    </aside>
   }
 
   const args = node.data.args ?? {}

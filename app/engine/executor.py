@@ -6,7 +6,7 @@ from typing import Any
 
 from app.engine.contracts import *
 from app.engine.locators import LocatorResolutionError, resolve_locator
-from playwright.sync_api import expect
+from playwright.sync_api import Error as PlaywrightError, expect
 
 # Step handlers receive validated arguments and mutable run state. Browser
 # actions are skipped when no page exists, while logical state remains usable.
@@ -41,8 +41,32 @@ def goto_url(args: GotoUrlArgs, state: dict[str, Any]) -> StepResult:
 def fill_input(args: TargetValueArgs, state: dict[str, Any]) -> StepResult:
     """Fill a resolved target using the configured locator strategy."""
     if (page := _page(state)) is not None:
-        resolve_locator(page, args.target).fill(args.value)
+        try:
+            resolve_locator(page, args.target).fill(args.value)
+        except PlaywrightError as exc:
+            raise StepExecutionError("Fill input could not find or edit its target. Select the input, textarea, or contenteditable box itself, not its placeholder text.") from exc
     return StepResult("Filled input")
+
+
+def type_text(args: TypeTextArgs, state: dict[str, Any]) -> StepResult:
+    """Send keystrokes to an explicitly focused editable control."""
+    if not args.value:
+        raise StepExecutionError("Type text needs a non-empty value")
+    if (page := _page(state)) is not None:
+        try:
+            editable = page.evaluate("""() => {
+                const el = document.activeElement;
+                return (el instanceof HTMLTextAreaElement && !el.disabled && !el.readOnly)
+                    || (el instanceof HTMLInputElement && !el.disabled && !el.readOnly
+                        && ['text', 'search', 'email', 'url', 'tel', 'password', 'number'].includes(el.type))
+                    || (el instanceof HTMLElement && el.isContentEditable);
+            }""")
+            if not editable:
+                raise StepExecutionError("Click an editable input or message box before Type text")
+            page.keyboard.type(args.value)
+        except PlaywrightError as exc:
+            raise StepExecutionError("Type text could not reach the focused editor. Click the editable field first.") from exc
+    return StepResult("Typed text into focused editor")
 
 
 def click(args: ClickArgs, state: dict[str, Any]) -> StepResult:
@@ -247,3 +271,5 @@ def execute_step(step_type: str, args: dict[str, Any], state: dict[str, Any]) ->
         return definition.handler(definition.args_model.model_validate(args), state)
     except (LocatorResolutionError, ValueError) as exc:
         raise StepExecutionError(str(exc)) from exc
+    except PlaywrightError as exc:
+        raise StepExecutionError(f"{definition.title} could not complete in the browser. Check the target and page state.") from exc

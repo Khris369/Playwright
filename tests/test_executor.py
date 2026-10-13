@@ -1,4 +1,5 @@
 import pytest
+from playwright.sync_api import Error as PlaywrightError
 
 from app.engine.contracts import Locator, VerifyElementArgs, WaitForElementArgs
 from app.engine import executor
@@ -160,3 +161,39 @@ def test_verify_element_checked_failure_explains_target_compatibility(monkeypatc
             VerifyElementArgs(target=Locator(strategy="text", text="Status"), expected_state="checked", timeout_ms=5000),
             {"page": page},
         )
+
+
+def test_type_text_uses_keyboard_only_after_editable_field_is_focused() -> None:
+    class Keyboard:
+        def __init__(self) -> None:
+            self.typed: list[str] = []
+
+        def type(self, value: str) -> None:
+            self.typed.append(value)
+
+    class Page:
+        def __init__(self, editable: bool) -> None:
+            self.editable = editable
+            self.keyboard = Keyboard()
+
+        def evaluate(self, script: str) -> bool:
+            assert "document.activeElement" in script
+            return self.editable
+
+    page = Page(editable=False)
+    with pytest.raises(StepExecutionError, match="Click an editable input"):
+        executor.execute_step("type_text", {"value": "hello"}, {"page": page})
+    assert page.keyboard.typed == []
+    page.editable = True
+    assert executor.execute_step("type_text", {"value": "hello"}, {"page": page}).log == "Typed text into focused editor"
+    assert page.keyboard.typed == ["hello"]
+
+
+def test_fill_input_browser_error_is_a_step_failure(monkeypatch) -> None:
+    class Uneditable:
+        def fill(self, value: str) -> None:
+            raise PlaywrightError("element is not editable")
+
+    monkeypatch.setattr(executor, "resolve_locator", lambda page, target: Uneditable())
+    with pytest.raises(StepExecutionError, match="Select the input, textarea, or contenteditable box"):
+        executor.execute_step("fill_input", {"target": {"strategy": "text", "text": "Type a message"}, "value": "hi"}, {"page": object()})

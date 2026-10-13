@@ -21,6 +21,7 @@ LOCAL_PREVIEW_CAPABILITIES: dict[str, PreviewCapability] = {
     "goto_url": PreviewCapability("supported", "goto_url"),
     "click": PreviewCapability("supported", "click", side_effect=True),
     "fill_input": PreviewCapability("supported", "fill_input", side_effect=True),
+    "type_text": PreviewCapability("supported", "type_text", side_effect=True),
     "select_option": PreviewCapability("supported", "select_option", side_effect=True),
     "wait_for_element": PreviewCapability("supported", "wait_for_element"),
     "wait_timeout": PreviewCapability("supported", "wait_timeout"),

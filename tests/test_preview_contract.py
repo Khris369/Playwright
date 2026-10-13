@@ -2,7 +2,9 @@ from app.engine.preview import LOCAL_PREVIEW_CAPABILITIES, possible_steps_to_tar
 from app.services.local_preview_service import LocalPreviewService, PreviewSession
 from picker_agent.protocol import parse_command
 from picker_agent.selection import SelectionCoordinator
+from picker_agent.preview import LocalPreviewExecutor, PreviewError
 import asyncio
+import pytest
 from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 
@@ -34,6 +36,34 @@ def test_only_ticket_submission_remains_explicitly_unsupported() -> None:
     assert "ticket_create_new_ticket" in LOCAL_PREVIEW_CAPABILITIES
     assert "ticket_fill_fields" in LOCAL_PREVIEW_CAPABILITIES
     assert "ticket_submit" not in LOCAL_PREVIEW_CAPABILITIES
+
+
+def test_preview_types_into_focused_editor_without_submitting() -> None:
+    class Keyboard:
+        def __init__(self) -> None:
+            self.typed: list[str] = []
+
+        async def type(self, value: str) -> None:
+            self.typed.append(value)
+
+    class Page:
+        def __init__(self) -> None:
+            self.editable = False
+            self.keyboard = Keyboard()
+
+        async def evaluate(self, script: str) -> bool:
+            assert "document.activeElement" in script
+            return self.editable
+
+    page = Page()
+    assert LOCAL_PREVIEW_CAPABILITIES["type_text"].status == "supported"
+    async def exercise() -> None:
+        with pytest.raises(PreviewError, match="Click an editable input"):
+            await LocalPreviewExecutor._execute(None, "type_text", {"value": "hello"}, {"page": page})
+        page.editable = True
+        assert await LocalPreviewExecutor._execute(None, "type_text", {"value": "hello"}, {"page": page}) == "Typed text into focused editor"
+    asyncio.run(exercise())
+    assert page.keyboard.typed == ["hello"]
 
 
 def test_selection_coordinator_blocks_other_picker_mode_until_release() -> None:

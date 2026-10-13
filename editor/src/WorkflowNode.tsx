@@ -47,11 +47,11 @@ export function WorkflowNode({ id, data, selected, isConnectable }: NodeProps<Gr
   return (
     <div className={`workflow-node ${selected || data.sequenceSelected ? 'selected' : ''} ${data.errors?.length ? 'invalid' : ''} ${data.runState ?? ''}`}>
       {data.kind !== 'comment' && data.kind !== 'start' && renderHandle('target', data.target_handle, canConnect)}
-      {data.kind === 'if' ? <><Handle id="true" type="source" position={Position.Right} style={{ top: '35%' }} isConnectable={canConnect} /><Handle id="false" type="source" position={Position.Right} style={{ top: '70%' }} isConnectable={canConnect} /></> : data.kind === 'loop' ? <><Handle id="body" type="source" position={Position.Right} style={{ top: '35%' }} isConnectable={canConnect} /><Handle id="done" type="source" position={Position.Right} style={{ top: '70%' }} isConnectable={canConnect} /></> : data.kind !== 'comment' && renderHandle('source', data.source_handle, canConnect)}
+      {data.kind === 'if' ? <><Handle id="true" type="source" position={Position.Right} style={{ top: '35%' }} title="TRUE: condition matches" isConnectable={canConnect} /><Handle id="false" type="source" position={Position.Right} style={{ top: '70%' }} title="FALSE: condition does not match" isConnectable={canConnect} /></> : data.kind === 'loop' ? <><Handle id="body" type="source" position={Position.Right} style={{ top: '35%' }} title="BODY: repeat these steps" isConnectable={canConnect} /><Handle id="done" type="source" position={Position.Right} style={{ top: '70%' }} title="DONE: continue after the loop" isConnectable={canConnect} /></> : data.kind !== 'comment' && renderHandle('source', data.source_handle, canConnect)}
       <div className="node-kind">{data.kind}</div>
       <strong>{data.kind === 'start' ? 'Start' : data.kind === 'comment' ? 'Comment' : data.title ?? data.step_type}</strong>
-      {data.kind === 'if' && <small>TRUE / FALSE</small>}
-      {data.kind === 'loop' && <small>BODY / DONE</small>}
+      {data.kind === 'if' && <div className="control-node-branches"><span>Upper: TRUE → match</span><span>Lower: FALSE → otherwise</span></div>}
+      {data.kind === 'loop' && <div className="control-node-branches"><span>Upper: BODY → repeat</span><span>Lower: DONE → continue</span></div>}
       <small>{summary}</small>
       {data.errors?.map((error) => <span className="node-error" key={error}>{error}</span>)}
       {data.runState && <span className="run-state">{data.runState}</span>}

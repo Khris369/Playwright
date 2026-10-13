@@ -50,6 +50,15 @@ def _condition_matches(args: dict[str, Any], state: dict[str, Any], inputs: dict
     return actual == expected
 
 
+def _step_log_args(step_type: str, args: Any) -> dict[str, Any]:
+    """Keep typed message content out of step history."""
+    if not isinstance(args, dict):
+        return {}
+    if step_type in {"fill_input", "type_text"}:
+        return {**args, "value": "[redacted]"}
+    return args
+
+
 def _record_artifact_safely(
     run_id: int,
     artifact_type: str,
@@ -217,7 +226,7 @@ class WorkflowRunnerService:
                             step_id=str(step_id) if step_id is not None else None,
                             step_type=step_type,
                             status="passed",
-                            args_json=args,
+                        args_json=_step_log_args(step_type, args),
                             log_text=result.log,
                         )
                         if step_screenshots_enabled and step_dir is not None:
@@ -243,7 +252,7 @@ class WorkflowRunnerService:
                             step_id=str(step_id) if step_id is not None else None,
                             step_type=step_type,
                             status="failed",
-                            args_json=args if isinstance(args, dict) else {},
+                        args_json=_step_log_args(step_type, args),
                             error_text=str(exc),
                         )
                         if artifacts_enabled and failure_screenshot_path is not None:

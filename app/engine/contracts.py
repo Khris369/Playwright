@@ -76,6 +76,10 @@ class TargetValueArgs(StrictModel):
     value: str = Field(max_length=100_000)
 
 
+class TypeTextArgs(StrictModel):
+    value: str = Field(max_length=10_000)
+
+
 class ClickArgs(StrictModel):
     target: Locator
 

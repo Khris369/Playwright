@@ -3,9 +3,9 @@ import { describe, expect, it, vi } from 'vitest'
 import { ReactFlowProvider } from '@xyflow/react'
 import { Palette } from './Palette'
 import { Inspector } from './Inspector'
-import { AgentPairingControl } from './App'
+import { AgentPairingControl, reconnectWorkflowEdge } from './App'
 import { WorkflowNode } from './WorkflowNode'
-import type { GraphNode, StepType } from './types'
+import type { GraphEdge, GraphNode, StepType } from './types'
 
 const step: StepType = { key: 'wait_timeout', name: 'Wait timeout', category: 'Wait', description: 'Bounded wait', default_args: { timeout_ms: 1000 }, args_schema: {}, editor_schema: { fields: [{ path: 'timeout_ms', widget: 'text' }] } }
 
@@ -327,5 +327,32 @@ describe('editor components', () => {
     view.rerender(<Inspector node={second} stepType={click} readOnly={false} onChange={change} picker={picker} />)
     expect(screen.queryByText('Selected element')).not.toBeInTheDocument()
     expect(change).not.toHaveBeenCalled()
+  })
+
+  it('explains how to wire a loop and when it exits', () => {
+    const node = routingNode({ kind: 'loop', args: { state_key: 'current_url', operator: 'contains', value: '/review', max_iterations: 10 } })
+    render(<Inspector node={node} stepType={undefined} readOnly={false} onChange={() => undefined} />)
+    expect(screen.getByText('Connect the upper BODY handle to the steps to repeat.')).toBeInTheDocument()
+    expect(screen.getByText("Connect the last repeated step back to this Loop's input.")).toBeInTheDocument()
+    expect(screen.getByText(/DONE runs when it becomes true or the iteration limit is reached/)).toBeInTheDocument()
+    expect(screen.getByText('The DONE path also runs when this limit is reached.')).toBeInTheDocument()
+  })
+
+  it('explains both if exits and where a condition value comes from', () => {
+    const node = routingNode({ kind: 'if', args: { state_key: 'inputs.name', operator: 'equals', value: 'Alice' } })
+    render(<Inspector node={node} stepType={undefined} readOnly={false} onChange={() => undefined} />)
+    expect(screen.getByText('Connect the upper TRUE handle to the matching path.')).toBeInTheDocument()
+    expect(screen.getByText('Connect the lower FALSE handle to the other path.')).toBeInTheDocument()
+    expect(screen.getByText('Both paths need a connection. They cannot rejoin at a normal step.')).toBeInTheDocument()
+    expect(screen.getAllByText('current_url')).toHaveLength(2)
+    expect(screen.getByText('inputs.name')).toBeInTheDocument()
+  })
+
+  it('updates a reconnected edge to match its control port', () => {
+    const edge: GraphEdge = { id: 'edge', source: 'step', target: 'next' }
+    const body = reconnectWorkflowEdge(edge, { source: 'loop', sourceHandle: 'body', target: 'next', targetHandle: null }, [edge])[0]
+    expect(body.data).toEqual({ branch: 'body' })
+    const ordinary = reconnectWorkflowEdge(body, { source: 'step', sourceHandle: 'source-right', target: 'next', targetHandle: null }, [body])[0]
+    expect(ordinary.data).toBeUndefined()
   })
 })

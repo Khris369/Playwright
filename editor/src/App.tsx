@@ -102,6 +102,16 @@ function PickerBrowserControl({ workflowId, nodeId, clientId, connected, disable
   </div>
 }
 
+function branchData(handle: string | null | undefined): GraphEdge['data'] {
+  return handle === 'true' || handle === 'false' || handle === 'body' || handle === 'done' ? { branch: handle } : undefined
+}
+
+export function reconnectWorkflowEdge(oldEdge: GraphEdge, connection: Connection, edges: GraphEdge[]): GraphEdge[] {
+  const sourceHandle = connection.sourceHandle ?? (connection.source === oldEdge.source ? oldEdge.sourceHandle : null)
+  return reconnectEdge(oldEdge, connection, edges, { shouldReplaceId: false })
+    .map((edge) => edge.id === oldEdge.id ? { ...edge, data: branchData(sourceHandle) } : edge)
+}
+
 export default function App() {
   const workflowId = Number(new URLSearchParams(location.search).get('workflow_id'))
   const initial = useMemo(blankGraph, [])
@@ -368,8 +378,12 @@ export default function App() {
     if (changes.some((change) => change.type !== 'select' && change.type !== 'dimensions')) setDirty(true)
   }
   const onEdgesChange = (changes: EdgeChange<GraphEdge>[]) => { if (!readOnly) { if (changes.some((c) => c.type === 'remove')) checkpoint(); setEdges((current) => applyEdgeChanges(changes, current)); setDirty(true) } }
-  const onConnect = (connection: Connection) => { if (!readOnly && isValidConnection(connection)) commit(nodes, [...edges, { id: uid(), source: connection.source!, target: connection.target!, data: connection.sourceHandle && ['true', 'false', 'body', 'done'].includes(connection.sourceHandle) ? { branch: connection.sourceHandle as any } : undefined }]) }
-  const onReconnect: OnReconnect<GraphEdge> = (oldEdge, connection) => { if (!isValidConnection(connection)) { reconnectSucceeded.current = true; return }; reconnectSucceeded.current = true; commit(nodes, reconnectEdge(oldEdge, connection, edges)) }
+  const onConnect = (connection: Connection) => { if (!readOnly && isValidConnection(connection)) commit(nodes, [...edges, { id: uid(), source: connection.source!, target: connection.target!, data: branchData(connection.sourceHandle) }]) }
+  const onReconnect: OnReconnect<GraphEdge> = (oldEdge, connection) => {
+    if (!isValidConnection(connection)) { reconnectSucceeded.current = true; return }
+    reconnectSucceeded.current = true
+    commit(nodes, reconnectWorkflowEdge(oldEdge, connection, edges))
+  }
 
   const onNodeContextMenu = (event: MouseEvent, node: GraphNode) => {
     event.preventDefault()
