@@ -24,6 +24,7 @@ Optional:
 From the repository root:
 
 ```powershell
+(Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned) ; (& c:\laragon\www\playwright\venv\Scripts\Activate.ps1)
 python -m venv venv
 .\venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
