@@ -13,6 +13,7 @@ editor/vite.config.js
 editor/vite.config.d.ts
 .tokensave
 app/web/artifacts/
+.serena
 
 knowledge/*
 !knowledge/LOCAL_SETUP.md

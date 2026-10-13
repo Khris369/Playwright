@@ -28,7 +28,7 @@ class DatabaseManager:
 
         return settings
 
-    def connect(self, name: str | None = None):
+    def connect(self, name: str | None = None, *, select_database: bool = True):
         settings = self.connection_settings(name)
         driver = settings.get("driver")
 
@@ -42,23 +42,25 @@ class DatabaseManager:
                 "PyMySQL is not installed. Install it with: pip install pymysql"
             ) from exc
 
-        return pymysql.connect(
-            host=settings["host"],
-            port=int(settings["port"]),
-            user=settings["username"],
-            password=settings["password"],
-            database=settings["database"],
-            charset=settings["charset"],
-            autocommit=False,
-            cursorclass=pymysql.cursors.DictCursor,
-        )
+        connection_kwargs = {
+            "host": settings["host"],
+            "port": int(settings["port"]),
+            "user": settings["username"],
+            "password": settings["password"],
+            "charset": settings["charset"],
+            "autocommit": False,
+            "cursorclass": pymysql.cursors.DictCursor,
+        }
+        if select_database:
+            connection_kwargs["database"] = settings["database"]
+        return pymysql.connect(**connection_kwargs)
 
 
 _db = DatabaseManager()
 
 
-def db_connection(name: str | None = None):
-    return _db.connect(name)
+def db_connection(name: str | None = None, *, select_database: bool = True):
+    return _db.connect(name, select_database=select_database)
 
 
 def db_settings(name: str | None = None) -> Dict[str, Any]:

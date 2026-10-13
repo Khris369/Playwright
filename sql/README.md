@@ -42,3 +42,19 @@ These files are retained only for existing installations.
 - Keep only additive update files that existing databases still need.
 - Do not add no-op compatibility files.
 - Back up the database before applying update files manually.
+
+## Migration Runner
+
+Run the ordered migration command from the repository root:
+
+```text
+python -m app.cli.migrate
+```
+
+The command uses the existing `DB_*` settings, detects whether the configured
+database is fresh, legacy, or already at the current bootstrap, and writes
+checksummed results to `sql/migrations_state.json`. A fresh database applies
+`001_init.sql` and records the compatibility files as included in that
+bootstrap. An older database applies the numbered update files after `001` in
+filename order. Use `--dry-run` to inspect the planned actions, or
+`--mode fresh` / `--mode existing` when automatic detection is not suitable.
